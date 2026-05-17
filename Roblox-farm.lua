@@ -1,5 +1,6 @@
 --[[ 
-    KIRIK LUXURY HUB v6.2 (PRO MOBILE EDITION)
+    KIRIK LUXURY HUB v6.3 (PRO MOBILE EDITION)
+    Added: Smart TP to Best Drop for PS99 (Auto-detects max zone & largest object)
     Fixed: Auto-Shifting Position, Joystick Drag Bug, Custom UI Scaling
 ]]
 
@@ -24,7 +25,7 @@ local Theme = {
     Sidebar = Color3.fromRGB(22, 22, 28),
     TopBar = Color3.fromRGB(18, 18, 24),
     Accent = Color3.fromRGB(0, 255, 128),
-    DragMode = Color3.fromRGB(255, 170, 0), -- Цвет при перетаскивании
+    DragMode = Color3.fromRGB(255, 170, 0),
     Text = Color3.fromRGB(240, 240, 240),
     ElementBg = Color3.fromRGB(30, 30, 38),
     ElementHover = Color3.fromRGB(40, 40, 50)
@@ -40,7 +41,6 @@ ScreenGui.Parent = targetGui
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 500, 0, 320)
--- AnchorPoint (0.5, 0) решает проблему с уезжанием вверх при анимациях!
 MainFrame.AnchorPoint = Vector2.new(0.5, 0)
 MainFrame.Position = UDim2.new(0.5, 0, 0.2, 0)
 MainFrame.BackgroundColor3 = Theme.Background
@@ -116,7 +116,7 @@ MinBtn.TextSize = 18
 MinBtn.Parent = TopBar
 Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
 
--- ЛОГИКА СВОРАЧИВАНИЯ (- / +)
+-- ЛОГИКА СВОРАЧИВАНИЯ
 local isMinimized = false
 local normalSize = UDim2.new(0, 500, 0, 320)
 local minSize = UDim2.new(0, 500, 0, 40)
@@ -141,9 +141,7 @@ CloseBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
--- ========================================== --
--- ЛОГИКА ПЕРЕТАСКИВАНИЯ (ДВОЙНОЙ ТАП РЕЖИМ)
--- ========================================== --
+-- ЛОГИКА ПЕРЕТАСКИВАНИЯ (ДВОЙНОЙ ТАП)
 local dragMode = false
 local lastTap = 0
 local dragInput = nil
@@ -151,16 +149,13 @@ local dragStart = nil
 local startPos = nil
 
 MainFrame.InputBegan:Connect(function(input)
-    -- Игнорируем нажатия, если игрок печатает в TextBox
     if UserInputService:GetFocusedTextBox() then return end
 
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         local now = tick()
-        -- Защита от случайного срабатывания Touch+Mouse одновременно на мобилках
         if now - lastTap < 0.05 then return end 
 
         if now - lastTap <= 0.4 then
-            -- Сработал двойной тап!
             dragMode = not dragMode
             if dragMode then
                 MainStroke.Color = Theme.DragMode
@@ -226,7 +221,7 @@ ContentContainer.Position = UDim2.new(0, 130, 0, 40)
 ContentContainer.BackgroundTransparency = 1
 ContentContainer.Parent = MainFrame
 
--- UI БИБЛИОТЕКА (ВНУТРЕННЯЯ)
+-- UI БИБЛИОТЕКА
 local Tabs = {}
 local Pages = {}
 local CurrentTab = nil
@@ -515,28 +510,109 @@ CreateButton(UniversalPage, "Fly Speed: 100 (Fast)", function() FlySpeed = 100 e
 CreateToggle(UniversalPage, "Noclip", ToggleNoclip)
 CreateToggle(UniversalPage, "Player ESP", ToggleESP)
 
--- НАПОЛНЕНИЕ: PET SIMULATOR 99
-CreateButton(PS99Page, "TP to Random Coin", function()
+-- НАПОЛНЕНИЕ: PET SIMULATOR 99 (SMART TP)
+CreateButton(PS99Page, "TP to Best Drop (Max Zone)", function()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
     local things = workspace:FindFirstChild("__THINGS")
-    local breakables = things and things:FindFirstChild("Breakables")
-    
-    if breakables then
-        for _, target in pairs(breakables:GetChildren()) do
-            local pos
-            if target:IsA("Model") and target.PrimaryPart then
-                pos = target.PrimaryPart.CFrame
-            elseif target:IsA("BasePart") then
-                pos = target.CFrame
-            end
-            
-            if pos then
-                local char = LocalPlayer.Character
-                if char and char:FindFirstChild("HumanoidRootPart") then
-                    char.HumanoidRootPart.CFrame = pos + Vector3.new(0, 5, 0)
-                    return
+    local breakablesFolder = things and things:FindFirstChild("Breakables")
+    if not breakablesFolder then return end
+
+    -- 1. Ищем максимальную открытую зону через Library (Официальный стандарт PS99)
+    local maxUnlocked = 0
+    pcall(function()
+        local Library = require(game:GetService("ReplicatedStorage"):WaitForChild("Library"):WaitForChild("Client"))
+        local save = Library.Save.Get()
+        if save and save.UnlockedZones then
+            for zone, isUnlocked in pairs(save.UnlockedZones) do
+                if isUnlocked then
+                    local num = tonumber(tostring(zone):match("%d+"))
+                    if num and num > maxUnlocked then
+                        maxUnlocked = num
+                    end
                 end
             end
         end
+    end)
+
+    -- 2. Группируем объекты по зонам, отсеивая закрытые для игрока
+    local zoneGroups = {}
+    for _, b in pairs(breakablesFolder:GetChildren()) do
+        local zoneId = b:GetAttribute("ZoneID")
+        if not zoneId then continue end
+        
+        local zoneNum = tonumber(tostring(zoneId):match("%d+"))
+        if not zoneNum then continue end
+        
+        if maxUnlocked > 0 and zoneNum > maxUnlocked then
+            continue -- Игрок еще не открыл эту зону, игнорируем
+        end
+        
+        if not zoneGroups[zoneNum] then
+            zoneGroups[zoneNum] = {}
+        end
+        table.insert(zoneGroups[zoneNum], b)
+    end
+
+    -- 3. Выбираем наивысшую зону, в которой ЕСТЬ объекты (если пустая - спустится ниже)
+    local targetZone = 0
+    if maxUnlocked > 0 then
+        for zoneNum, items in pairs(zoneGroups) do
+            if #items > 0 and zoneNum > targetZone then
+                targetZone = zoneNum
+            end
+        end
+    else
+        -- Fallback: Если Library не сработала, ищем зону, ближайшую к текущей позиции игрока
+        local minDistance = math.huge
+        for zoneNum, items in pairs(zoneGroups) do
+            for _, item in pairs(items) do
+                local pivot = item:GetPivot()
+                if pivot then
+                    local dist = (pivot.Position - hrp.Position).Magnitude
+                    if dist < minDistance then
+                        minDistance = dist
+                        targetZone = zoneNum
+                    end
+                end
+            end
+        end
+    end
+
+    if targetZone == 0 then return end -- Ничего не найдено
+
+    -- 4. Ищем самый большой/жирный объект в выбранной зоне (Сейфы/Сундуки)
+    local bestTarget = nil
+    local bestScore = -1
+
+    for _, b in pairs(zoneGroups[targetZone]) do
+        local score = 0
+        
+        -- Оценка по физическому объему 
+        if b:IsA("Model") then
+            local ext = b:GetExtentsSize()
+            score = score + (ext.X * ext.Y * ext.Z)
+        elseif b:IsA("BasePart") then
+            score = score + (b.Size.X * b.Size.Y * b.Size.Z)
+        end
+        
+        -- Оценка по атрибуту здоровья
+        local hp = b:GetAttribute("Health") or b:GetAttribute("MaxHealth") or 0
+        score = score + (tonumber(hp) or 0)
+        
+        if score > bestScore then
+            bestScore = score
+            bestTarget = b
+        end
+    end
+
+    -- 5. Телепорт к победителю!
+    if bestTarget then
+        local pos = bestTarget:GetPivot().Position
+        -- Прыгаем чуть выше центра объекта, чтобы не застрять в текстурах
+        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 10, 0))
     end
 end)
 
@@ -569,18 +645,15 @@ CreateButton(MM2Page, "TP to Lobby (MM2)", function()
     end
 end)
 
--- НАПОЛНЕНИЕ: НАСТРОЙКИ (МАСШТАБ ХАБА)
+-- НАПОЛНЕНИЕ: НАСТРОЙКИ
 CreateTextBox(SettingsPage, "Custom Size (ex. 75, 1.2, 150%)", function(text)
-    -- Парсинг текста: убираем лишнее, оставляем только цифры
     local num = text:match("[%d%.]+")
     if num then
         local scale = tonumber(num)
         if scale then
-            -- Если число больше 10 (например 75, 100, 150), переводим в проценты
             if scale >= 10 then 
                 scale = scale / 100
             end
-            -- Ограничиваем, чтобы UI не стал микроскопическим или на весь экран
             scale = math.clamp(scale, 0.4, 2.5) 
             TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = scale}):Play()
         end
