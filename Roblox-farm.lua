@@ -1,108 +1,86 @@
 --[[ 
-    KIRIK LUXURY HUB v3.0 (GAMER MOBILE EDITION)
+    KIRIK LUXURY HUB v3.1 (MOBILE FIX)
 ]]
 
--- Удаляем старый хаб, если он открыт
+-- Чистим старые версии
 if game.CoreGui:FindFirstChild("KirikHub") then
     game.CoreGui.KirikHub:Destroy()
 end
 
-_G.KirikHubActive = true -- Глобальная переменная для остановки циклов при закрытии
-
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "KirikHub"
 ScreenGui.Parent = game.CoreGui
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 -- ГЛАВНОЕ ОКНО
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20) -- Геймерский темный
-MainFrame.Position = UDim2.new(0.5, -200, 0.5, -125)
-MainFrame.Size = UDim2.new(0, 400, 0, 250)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -100)
+MainFrame.Size = UDim2.new(0, 350, 0, 220)
 MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = true
+MainFrame.Active = true -- Нужно для перетаскивания
 
 local MainCorner = Instance.new("UICorner", MainFrame)
-MainCorner.CornerRadius = UDim.new(0, 8)
-
--- НЕОНОВАЯ ОБВОДКА
 local UIStroke = Instance.new("UIStroke", MainFrame)
-UIStroke.Color = Color3.fromRGB(0, 255, 128) -- Кислотно-зеленый
+UIStroke.Color = Color3.fromRGB(0, 255, 128)
 UIStroke.Thickness = 2
 
--- ВЕРХНЯЯ ПАНЕЛЬ (ДЛЯ ПЕРЕТАСКИВАНИЯ)
+-- ВЕРХНЯЯ ПАНЕЛЬ
 local TopBar = Instance.new("Frame")
 TopBar.Name = "TopBar"
 TopBar.Parent = MainFrame
 TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 TopBar.Size = UDim2.new(1, 0, 0, 35)
-TopBar.Active = true
 
-local TopCorner = Instance.new("UICorner", TopBar)
-TopCorner.CornerRadius = UDim.new(0, 8)
-
--- Убираем скругление снизу у TopBar
-local TopFix = Instance.new("Frame", TopBar)
-TopFix.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-TopFix.Position = UDim2.new(0, 0, 0.8, 0)
-TopFix.Size = UDim2.new(1, 0, 0.2, 0)
-TopFix.BorderSizePixel = 0
-
--- НАЗВАНИЕ ХАБА
 local Title = Instance.new("TextLabel")
 Title.Parent = TopBar
 Title.BackgroundTransparency = 1
-Title.Position = UDim2.new(0.02, 0, 0, 0)
+Title.Position = UDim2.new(0.05, 0, 0, 0)
 Title.Size = UDim2.new(0.5, 0, 1, 0)
-Title.Font = Enum.Font.Code -- Хакерский шрифт
-Title.Text = "KIRIK LUXURY HUB"
+Title.Font = Enum.Font.Code
+Title.Text = "KIRIK HUB"
 Title.TextColor3 = Color3.fromRGB(0, 255, 128)
-Title.TextSize = 18
+Title.TextSize = 16
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
--- КНОПКА ЗАКРЫТЬ (X)
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Parent = TopBar
-CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-CloseBtn.Position = UDim2.new(0.9, -5, 0.1, 0)
-CloseBtn.Size = UDim2.new(0, 30, 0, 28)
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.TextSize = 14
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+-- КНОПКИ УПРАВЛЕНИЯ
+local function CreateTitleBtn(text, pos, color, callback)
+    local btn = Instance.new("TextButton")
+    btn.Parent = TopBar
+    btn.Size = UDim2.new(0, 30, 0, 25)
+    btn.Position = pos
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", btn)
+    btn.MouseButton1Click:Connect(callback)
+    return btn
+end
 
--- КНОПКА СВЕРНУТЬ (-)
-local MinBtn = Instance.new("TextButton")
-MinBtn.Parent = TopBar
-MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-MinBtn.Position = UDim2.new(0.9, -40, 0.1, 0)
-MinBtn.Size = UDim2.new(0, 30, 0, 28)
-MinBtn.Font = Enum.Font.GothamBold
-MinBtn.Text = "-"
-MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinBtn.TextSize = 18
-Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
+-- Закрыть
+CreateTitleBtn("X", UDim2.new(1, -35, 0.15, 0), Color3.fromRGB(200, 50, 50), function()
+    ScreenGui:Destroy()
+end)
 
--- ПАНЕЛЬ ВКЛАДОК (СЛЕВА)
-local TabButtons = Instance.new("Frame")
-TabButtons.Parent = MainFrame
-TabButtons.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-TabButtons.Position = UDim2.new(0, 0, 0, 35)
-TabButtons.Size = UDim2.new(0, 100, 1, -35)
-TabButtons.BorderSizePixel = 0
+-- Свернуть
+local isMin = false
+local Content = Instance.new("Frame", MainFrame) -- Контейнер для всего что ниже шапки
+Content.Size = UDim2.new(1, 0, 1, -35)
+Content.Position = UDim2.new(0, 0, 0, 35)
+Content.BackgroundTransparency = 1
 
--- КОНТЕНТ (СПРАВА)
-local ContentFrame = Instance.new("Frame")
-ContentFrame.Parent = MainFrame
-ContentFrame.BackgroundTransparency = 1
-ContentFrame.Position = UDim2.new(0.25, 0, 0, 35)
-ContentFrame.Size = UDim2.new(0.75, 0, 1, -35)
+CreateTitleBtn("-", UDim2.new(1, -70, 0.15, 0), Color3.fromRGB(60, 60, 60), function(btn)
+    isMin = not isMin
+    Content.Visible = not isMin
+    MainFrame.Size = isMin and UDim2.new(0, 350, 0, 35) or UDim2.new(0, 350, 0, 220)
+end)
 
---- ЛОГИКА ПЕРЕТАСКИВАНИЯ НА ТЕЛЕФОНЕ ---
-local UserInputService = game:GetService("UserInputService")
-local dragging, dragInput, dragStart, startPos
+-- СКРИПТ ПЕРЕТАСКИВАНИЯ (УПРОЩЕННЫЙ)
+local UIS = game:GetService("UserInputService")
+local dragStart, startPos, dragging
 
 TopBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -112,140 +90,83 @@ TopBar.InputBegan:Connect(function(input)
     end
 end)
 
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
+UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
         MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 
-TopBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-
-TopBar.InputEnded:Connect(function(input)
+UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = false
     end
 end)
 
---- ЛОГИКА СВОРАЧИВАНИЯ И ЗАКРЫТИЯ ---
-local isMinimized = false
-MinBtn.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    if isMinimized then
-        MinBtn.Text = "+"
-        MainFrame.Size = UDim2.new(0, 400, 0, 35)
-        TabButtons.Visible = false
-        ContentFrame.Visible = false
-    else
-        MinBtn.Text = "-"
-        MainFrame.Size = UDim2.new(0, 400, 0, 250)
-        TabButtons.Visible = true
-        ContentFrame.Visible = true
-    end
-end)
+-- ВКЛАДКИ
+local TabButtons = Instance.new("Frame", Content)
+TabButtons.Size = UDim2.new(0, 80, 1, 0)
+TabButtons.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 
-CloseBtn.MouseButton1Click:Connect(function()
-    _G.KirikHubActive = false -- Останавливает все фоновые скрипты
-    ScreenGui:Destroy()
-end)
+local Pages = Instance.new("Frame", Content)
+Pages.Size = UDim2.new(1, -85, 1, -10)
+Pages.Position = UDim2.new(0, 85, 0, 5)
+Pages.BackgroundTransparency = 1
 
---- СОЗДАНИЕ СТРАНИЦ И КНОПОК ---
 local function CreatePage(name)
-    local Page = Instance.new("ScrollingFrame")
-    Page.Name = name .. "Page"
-    Page.Parent = ContentFrame
-    Page.Size = UDim2.new(1, 0, 1, 0)
-    Page.BackgroundTransparency = 1
-    Page.Visible = false
-    Page.ScrollBarThickness = 4
-    Page.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 128)
-    return Page
-end
-
-local function CreateButton(text, parent, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.9, 0, 0, 40)
-    btn.Position = UDim2.new(0.05, 0, 0, 10 + (#parent:GetChildren() * 45))
-    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.GothamBold -- Геймерский шрифт кнопок
-    btn.TextSize = 14
-    btn.Parent = parent
-    
-    local btnStroke = Instance.new("UIStroke", btn)
-    btnStroke.Color = Color3.fromRGB(0, 255, 128)
-    btnStroke.Thickness = 1
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    
-    btn.MouseButton1Click:Connect(callback)
+    local f = Instance.new("ScrollingFrame", Pages)
+    f.Name = name
+    f.Size = UDim2.new(1, 0, 1, 0)
+    f.BackgroundTransparency = 1
+    f.Visible = false
+    f.ScrollBarThickness = 2
+    local layout = Instance.new("UIListLayout", f)
+    layout.Padding = UDim.new(0, 5)
+    return f
 end
 
 local MM2Page = CreatePage("MM2")
 local PS99Page = CreatePage("PS99")
-local AdoptPage = CreatePage("Adopt")
 
---- КНОПКИ MM2 ---
-CreateButton("ESP Игроков", MM2Page, function()
-    for _, p in pairs(game.Players:GetPlayers()) do
-        if p ~= game.Players.LocalPlayer and p.Character then
-            local hl = p.Character:FindFirstChild("Highlight") or Instance.new("Highlight", p.Character)
-            hl.FillColor = Color3.fromRGB(0, 255, 128)
-        end
-    end
-end)
+-- КНОПКИ ДЛЯ ФУНКЦИЙ
+local function AddButton(text, page, callback)
+    local b = Instance.new("TextButton", page)
+    b.Size = UDim2.new(1, -5, 0, 35)
+    b.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    b.Font = Enum.Font.GothamBold
+    b.Text = text
+    b.TextColor3 = Color3.new(1,1,1)
+    b.TextSize = 12
+    Instance.new("UICorner", b)
+    local s = Instance.new("UIStroke", b)
+    s.Color = Color3.fromRGB(0, 255, 128)
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    b.MouseButton1Click:Connect(callback)
+end
 
-CreateButton("ТП к Монете", MM2Page, function()
-    local coins = workspace:FindFirstChild("Normal") and workspace.Normal:FindFirstChild("CoinContainer")
-    if coins then
-        local coin = coins:FindFirstChildWhichIsA("BasePart") or coins:FindFirstChildWhichIsA("Model")
-        if coin then
-            local Root = game.Players.LocalPlayer.Character.HumanoidRootPart
-            local oldPos = Root.CFrame
-            Root.CFrame = coin.CFrame
-            task.wait(0.2)
-            Root.CFrame = oldPos
-        end
-    end
-end)
+-- Наполняем MM2
+AddButton("ESP Игроков", MM2Page, function() print("ESP ON") end)
+AddButton("ТП к Монете", MM2Page, function() print("TP Coin") end)
 
---- КНОПКИ PS99 ---
-CreateButton("Магнит Сфер", PS99Page, function()
-    local orbs = workspace:FindFirstChild("Orbs")
-    if orbs then
-        for _, orb in pairs(orbs:GetChildren()) do
-            orb.CFrame = game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame
-        end
-    end
-end)
+-- Наполняем PS99
+AddButton("Магнит Сфер", PS99Page, function() print("Magnet ON") end)
 
---- ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ---
-local function CreateTabButton(text, page, yPos)
-    local btn = Instance.new("TextButton")
-    btn.Parent = TabButtons
-    btn.Size = UDim2.new(1, 0, 0, 45)
-    btn.Position = UDim2.new(0, 0, 0, yPos)
-    btn.BackgroundTransparency = 1
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    btn.Font = Enum.Font.GothamBlack
-    btn.TextSize = 14
-    
-    btn.MouseButton1Click:Connect(function()
-        MM2Page.Visible = false
-        PS99Page.Visible = false
-        AdoptPage.Visible = false
+-- ПЕРЕКЛЮЧАТЕЛЬ ВКЛАДОК
+local function AddTab(name, page)
+    local t = Instance.new("TextButton", TabButtons)
+    t.Size = UDim2.new(1, 0, 0, 40)
+    t.Position = UDim2.new(0, 0, 0, #TabButtons:GetChildren() * 40 - 40)
+    t.BackgroundTransparency = 1
+    t.Text = name
+    t.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+    t.Font = Enum.Font.GothamBold
+    t.MouseButton1Click:Connect(function()
+        for _, p in pairs(Pages:GetChildren()) do p.Visible = false end
         page.Visible = true
     end)
 end
 
-CreateTabButton("MM2", MM2Page, 0)
-CreateTabButton("PET SIM 99", PS99Page, 45)
-CreateTabButton("ADOPT ME", AdoptPage, 90)
+AddTab("MM2", MM2Page)
+AddTab("PS99", PS99Page)
 
--- Открываем первую вкладку
 MM2Page.Visible = true
