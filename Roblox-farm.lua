@@ -1,7 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v6.8 (PRO MOBILE EDITION)
-    Fixed: Falling through map during PS99 TP (Added Anchoring)
-    Added: Base64 Config Export & Import (100% Save Guarantee)
+    KIRIK LUXURY HUB v7.0 (ULTIMATE MOBILE EDITION)
+    Fixed: Falling through map (Added RequestStreamAroundAsync + Dynamic Wait)
+    Added: Full Config System (Saves ALL settings + Zones to Base64)
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -15,15 +15,23 @@ local LocalPlayer = Players.LocalPlayer
 local IsAdmin = (LocalPlayer.UserId == 5463685844) -- Твой ID
 
 -- Защита от дубликатов
-local HubName = "KirikLuxuryHub_V6"
+local HubName = "KirikLuxuryHub_V7"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
     targetGui[HubName]:Destroy()
 end
 
 -- ========================================= --
--- БИБЛИОТЕКА BASE64 (ДЛЯ СОХРАНЕНИЯ)
+-- ГЛОБАЛЬНЫЙ КОНФИГ (СОХРАНЯЕТ ВСЁ)
 -- ========================================= --
+local Config = {
+    TargetPS99Zone = 1,
+    FlySpeed = 50,
+    UIScale = 1.0,
+    SavedZones = {} -- Здесь хранятся координаты центров
+}
+
+-- БИБЛИОТЕКА BASE64
 local Base64 = {}
 local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 function Base64.Encode(data)
@@ -85,7 +93,7 @@ MainFrame.Active = true
 MainFrame.Parent = ScreenGui
 
 local MainScale = Instance.new("UIScale")
-MainScale.Scale = 1
+MainScale.Scale = Config.UIScale
 MainScale.Parent = MainFrame
 
 local MainCorner = Instance.new("UICorner")
@@ -226,12 +234,7 @@ Sidebar.BorderSizePixel = 0
 Sidebar.ScrollBarThickness = 0
 Sidebar.Active = true
 Sidebar.Parent = MainFrame
-
-local SidebarLayout = Instance.new("UIListLayout")
-SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
-SidebarLayout.Padding = UDim.new(0, 5)
-SidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-SidebarLayout.Parent = Sidebar
+Instance.new("UIListLayout", Sidebar).SortOrder = Enum.SortOrder.LayoutOrder
 Instance.new("UIPadding", Sidebar).PaddingTop = UDim.new(0, 10)
 
 local ContentContainer = Instance.new("Frame")
@@ -249,10 +252,8 @@ local function CreateTab(name, isSpecial)
     local TabBtn = Instance.new("TextButton")
     TabBtn.Size = UDim2.new(0.9, 0, 0, 40)
     TabBtn.BackgroundColor3 = Theme.ElementBg
-    TabBtn.Text = name
-    TabBtn.Font = Enum.Font.GothamBold
+    TabBtn.Text = name; TabBtn.Font = Enum.Font.GothamBold; TabBtn.TextSize = 14
     TabBtn.TextColor3 = isSpecial and Theme.AdminAccent or Theme.Text
-    TabBtn.TextSize = 14
     TabBtn.Parent = Sidebar
     Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 8)
     
@@ -262,11 +263,9 @@ local function CreateTab(name, isSpecial)
     TabStroke.Parent = TabBtn
 
     local Page = Instance.new("ScrollingFrame")
-    Page.Size = UDim2.new(1, 0, 1, 0)
-    Page.BackgroundTransparency = 1
-    Page.ScrollBarThickness = 3
+    Page.Size = UDim2.new(1, 0, 1, 0); Page.BackgroundTransparency = 1
+    Page.ScrollBarThickness = 3; Page.Visible = false
     Page.ScrollBarImageColor3 = isSpecial and Theme.AdminAccent or Theme.Accent
-    Page.Visible = false
     Page.Parent = ContentContainer
 
     local PageLayout = Instance.new("UIListLayout")
@@ -286,32 +285,23 @@ local function CreateTab(name, isSpecial)
     TabBtn.MouseButton1Click:Connect(function()
         for tName, tBtn in pairs(Tabs) do
             TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.ElementBg}):Play()
-            tBtn.UIStroke.Transparency = 1
-            Pages[tName].Visible = false
+            tBtn.UIStroke.Transparency = 1; Pages[tName].Visible = false
         end
         TweenService:Create(TabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.ElementHover}):Play()
-        TabStroke.Transparency = 0
-        Page.Visible = true
+        TabStroke.Transparency = 0; Page.Visible = true
     end)
 
     if not CurrentTab then
         TabBtn.BackgroundColor3 = Theme.ElementHover
-        TabStroke.Transparency = 0
-        Page.Visible = true
-        CurrentTab = name
+        TabStroke.Transparency = 0; Page.Visible = true; CurrentTab = name
     end
-
     return Page
 end
 
 local function CreateButton(page, text, callback)
     local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(0.95, 0, 0, 45)
-    Btn.BackgroundColor3 = Theme.ElementBg
-    Btn.Text = text
-    Btn.Font = Enum.Font.GothamBold
-    Btn.TextColor3 = Theme.Text
-    Btn.TextSize = 14
+    Btn.Size = UDim2.new(0.95, 0, 0, 45); Btn.BackgroundColor3 = Theme.ElementBg
+    Btn.Text = text; Btn.Font = Enum.Font.GothamBold; Btn.TextColor3 = Theme.Text; Btn.TextSize = 14
     Btn.Parent = page
     Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
     Instance.new("UIStroke", Btn).Color = Color3.fromRGB(60, 60, 70)
@@ -323,38 +313,24 @@ end
 
 local function CreateToggle(page, text, callback)
     local ToggleFrame = Instance.new("Frame")
-    ToggleFrame.Size = UDim2.new(0.95, 0, 0, 45)
-    ToggleFrame.BackgroundColor3 = Theme.ElementBg
-    ToggleFrame.Parent = page
+    ToggleFrame.Size = UDim2.new(0.95, 0, 0, 45); ToggleFrame.BackgroundColor3 = Theme.ElementBg; ToggleFrame.Parent = page
     Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 8)
     Instance.new("UIStroke", ToggleFrame).Color = Color3.fromRGB(60, 60, 70)
 
     local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.7, 0, 1, 0)
-    Label.Position = UDim2.new(0, 15, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text; Label.Font = Enum.Font.GothamBold; Label.TextColor3 = Theme.Text; Label.TextSize = 14; Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = ToggleFrame
+    Label.Size = UDim2.new(0.7, 0, 1, 0); Label.Position = UDim2.new(0, 15, 0, 0); Label.BackgroundTransparency = 1
+    Label.Text = text; Label.Font = Enum.Font.GothamBold; Label.TextColor3 = Theme.Text; Label.TextSize = 14; Label.TextXAlignment = Enum.TextXAlignment.Left; Label.Parent = ToggleFrame
 
     local SwitchBg = Instance.new("Frame")
-    SwitchBg.Size = UDim2.new(0, 40, 0, 20)
-    SwitchBg.Position = UDim2.new(1, -55, 0.5, -10)
-    SwitchBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    SwitchBg.Parent = ToggleFrame
+    SwitchBg.Size = UDim2.new(0, 40, 0, 20); SwitchBg.Position = UDim2.new(1, -55, 0.5, -10); SwitchBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50); SwitchBg.Parent = ToggleFrame
     Instance.new("UICorner", SwitchBg).CornerRadius = UDim.new(1, 0)
 
     local SwitchKnob = Instance.new("Frame")
-    SwitchKnob.Size = UDim2.new(0, 16, 0, 16)
-    SwitchKnob.Position = UDim2.new(0, 2, 0.5, -8)
-    SwitchKnob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-    SwitchKnob.Parent = SwitchBg
+    SwitchKnob.Size = UDim2.new(0, 16, 0, 16); SwitchKnob.Position = UDim2.new(0, 2, 0.5, -8); SwitchKnob.BackgroundColor3 = Color3.fromRGB(200, 200, 200); SwitchKnob.Parent = SwitchBg
     Instance.new("UICorner", SwitchKnob).CornerRadius = UDim.new(1, 0)
 
     local ToggleBtn = Instance.new("TextButton")
-    ToggleBtn.Size = UDim2.new(1, 0, 1, 0)
-    ToggleBtn.BackgroundTransparency = 1
-    ToggleBtn.Text = ""
-    ToggleBtn.Parent = ToggleFrame
+    ToggleBtn.Size = UDim2.new(1, 0, 1, 0); ToggleBtn.BackgroundTransparency = 1; ToggleBtn.Text = ""; ToggleBtn.Parent = ToggleFrame
 
     local state = false
     ToggleBtn.MouseButton1Click:Connect(function()
@@ -367,41 +343,28 @@ local function CreateToggle(page, text, callback)
     end)
 end
 
-local function CreateTextBox(page, text, callback)
+local function CreateTextBox(page, text, placeholder, callback)
     local TextBoxFrame = Instance.new("Frame")
-    TextBoxFrame.Size = UDim2.new(0.95, 0, 0, 45)
-    TextBoxFrame.BackgroundColor3 = Theme.ElementBg
-    TextBoxFrame.Parent = page
+    TextBoxFrame.Size = UDim2.new(0.95, 0, 0, 45); TextBoxFrame.BackgroundColor3 = Theme.ElementBg; TextBoxFrame.Parent = page
     Instance.new("UICorner", TextBoxFrame).CornerRadius = UDim.new(0, 8)
     Instance.new("UIStroke", TextBoxFrame).Color = Color3.fromRGB(60, 60, 70)
 
     local Label = Instance.new("TextLabel")
-    Label.Size = UDim2.new(0.5, 0, 1, 0)
-    Label.Position = UDim2.new(0, 15, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text; Label.Font = Enum.Font.GothamBold; Label.TextColor3 = Theme.Text; Label.TextSize = 14; Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = TextBoxFrame
+    Label.Size = UDim2.new(0.5, 0, 1, 0); Label.Position = UDim2.new(0, 15, 0, 0); Label.BackgroundTransparency = 1
+    Label.Text = text; Label.Font = Enum.Font.GothamBold; Label.TextColor3 = Theme.Text; Label.TextSize = 14; Label.TextXAlignment = Enum.TextXAlignment.Left; Label.Parent = TextBoxFrame
 
     local TextBoxBg = Instance.new("Frame")
-    TextBoxBg.Size = UDim2.new(0.4, 0, 0.7, 0)
-    TextBoxBg.Position = UDim2.new(0.98, 0, 0.15, 0)
-    TextBoxBg.AnchorPoint = Vector2.new(1, 0)
-    TextBoxBg.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-    TextBoxBg.Parent = TextBoxFrame
+    TextBoxBg.Size = UDim2.new(0.4, 0, 0.7, 0); TextBoxBg.Position = UDim2.new(0.98, 0, 0.15, 0); TextBoxBg.AnchorPoint = Vector2.new(1, 0); TextBoxBg.BackgroundColor3 = Color3.fromRGB(20, 20, 25); TextBoxBg.Parent = TextBoxFrame
     Instance.new("UICorner", TextBoxBg).CornerRadius = UDim.new(0, 6)
     Instance.new("UIStroke", TextBoxBg).Color = Color3.fromRGB(60, 60, 70)
 
     local TextBox = Instance.new("TextBox")
-    TextBox.Size = UDim2.new(1, 0, 1, 0)
-    TextBox.BackgroundTransparency = 1
-    TextBox.Text = ""; TextBox.PlaceholderText = "..."
-    TextBox.Font = Enum.Font.GothamBold; TextBox.TextColor3 = Theme.Text; TextBox.TextSize = 14
-    TextBox.ClearTextOnFocus = false
-    TextBox.Parent = TextBoxBg
+    TextBox.Size = UDim2.new(1, 0, 1, 0); TextBox.BackgroundTransparency = 1; TextBox.Text = ""
+    TextBox.PlaceholderText = placeholder or "..."
+    TextBox.Font = Enum.Font.GothamBold; TextBox.TextColor3 = Theme.Text; TextBox.TextSize = 14; TextBox.ClearTextOnFocus = false; TextBox.Parent = TextBoxBg
 
     TextBox.FocusLost:Connect(function() callback(TextBox.Text) end)
-    
-    return TextBox -- Возвращаем TextBox чтобы можно было менять его текст
+    return TextBox 
 end
 
 -- ========================================= --
@@ -414,11 +377,9 @@ local function KLog(msg)
     print("[KIRIK HUB]: " .. tostring(msg))
     if IsAdmin and DebugPage then
         local logMsg = Instance.new("TextLabel")
-        logMsg.Size = UDim2.new(0.95, 0, 0, 25)
-        logMsg.BackgroundTransparency = 1
+        logMsg.Size = UDim2.new(0.95, 0, 0, 25); logMsg.BackgroundTransparency = 1
         logMsg.Text = "» " .. tostring(msg); logMsg.Font = Enum.Font.Code; logMsg.TextColor3 = Color3.fromRGB(200, 200, 200)
-        logMsg.TextSize = 12; logMsg.TextWrapped = true; logMsg.TextXAlignment = Enum.TextXAlignment.Left
-        logMsg.Parent = DebugPage
+        logMsg.TextSize = 12; logMsg.TextWrapped = true; logMsg.TextXAlignment = Enum.TextXAlignment.Left; logMsg.Parent = DebugPage
         DebugPage.CanvasPosition = Vector2.new(0, 999999)
     end
 end
@@ -428,16 +389,17 @@ if IsAdmin then KLog("Welcome to Admin Mode, Creator!") end
 --=========================================--
 --           ФУНКЦИОНАЛ ХАБА               --
 --=========================================--
-
 local UniversalPage = CreateTab("Universal", false)
 local PS99Page = CreateTab("PS99", false)
 local MM2Page = CreateTab("MM2", false)
 local SettingsPage = CreateTab("Settings", false)
 
+-- ГЛОБАЛЬНЫЕ UI ЭЛЕМЕНТЫ (ДЛЯ ИМПОРТА)
+local FlySpeedInput, ZoneInputBox, SizeInputBox
+
 -- ===================================
 -- UNIVERSAL FUNCTIONS
 -- ===================================
-local FlySpeed = 50
 local FlyLoop, NoclipLoop, ESP_Loop
 
 local function ToggleFly(state)
@@ -453,7 +415,7 @@ local function ToggleFly(state)
             local PlayerModule = require(LocalPlayer.PlayerScripts:WaitForChild("PlayerModule"))
             local moveVector = PlayerModule:GetControls():GetMoveVector()
             if moveVector.Magnitude > 0 then
-                bv.Velocity = ((cam.CFrame.LookVector * -moveVector.Z) + (cam.CFrame.RightVector * moveVector.X)) * FlySpeed
+                bv.Velocity = ((cam.CFrame.LookVector * -moveVector.Z) + (cam.CFrame.RightVector * moveVector.X)) * Config.FlySpeed
             else
                 bv.Velocity = Vector3.zero
             end
@@ -496,30 +458,29 @@ local function ToggleESP(state)
 end
 
 CreateToggle(UniversalPage, "Mobile Fly", ToggleFly)
-CreateButton(UniversalPage, "Fly Speed: 50 (Default)", function() FlySpeed = 50 end)
-CreateButton(UniversalPage, "Fly Speed: 100 (Fast)", function() FlySpeed = 100 end)
+FlySpeedInput = CreateTextBox(UniversalPage, "Fly Speed", tostring(Config.FlySpeed), function(text)
+    local num = tonumber(text:match("%d+"))
+    if num then Config.FlySpeed = num; KLog("Fly Speed set to " .. num) end
+end)
 CreateToggle(UniversalPage, "Noclip", ToggleNoclip)
 CreateToggle(UniversalPage, "Player ESP", ToggleESP)
 
 -- ===================================
--- PET SIMULATOR 99 (CUSTOM ZONES)
+-- PET SIMULATOR 99 (SMART + CUSTOM ZONES)
 -- ===================================
-local TargetPS99Zone = 1
-local SavedZones = {}
-
-CreateTextBox(PS99Page, "Set Target Zone (ex: 33)", function(text)
+ZoneInputBox = CreateTextBox(PS99Page, "Target Zone (ex: 33)", tostring(Config.TargetPS99Zone), function(text)
     local num = tonumber(text:match("%d+"))
-    if num then TargetPS99Zone = num; KLog("Target Zone changed to: " .. TargetPS99Zone) end
+    if num then Config.TargetPS99Zone = num; KLog("Target Zone changed to: " .. Config.TargetPS99Zone) end
 end)
 
 CreateButton(PS99Page, "Save Current Pos as Zone Center", function()
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return KLog("Error: Character not found") end
-
+    
     local pos = hrp.Position
-    SavedZones[tostring(TargetPS99Zone)] = {X = pos.X, Y = pos.Y, Z = pos.Z}
-    KLog("SAVED! Go to Settings to Export Base64 code.")
+    Config.SavedZones[tostring(Config.TargetPS99Zone)] = {X = pos.X, Y = pos.Y, Z = pos.Z}
+    KLog("SAVED! Go to Settings to Export Base64 code so you don't lose it.")
 end)
 
 CreateButton(PS99Page, "TP to Best Drop in Zone", function()
@@ -527,10 +488,10 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return KLog("Error: No Character found.") end
 
-    KLog("Initiating TP to Zone: " .. tostring(TargetPS99Zone))
+    KLog("Initiating TP to Zone: " .. tostring(Config.TargetPS99Zone))
 
     local preTpPos = nil
-    local savedData = SavedZones[tostring(TargetPS99Zone)]
+    local savedData = Config.SavedZones[tostring(Config.TargetPS99Zone)]
 
     if savedData then
         preTpPos = Vector3.new(savedData.X, savedData.Y, savedData.Z)
@@ -541,7 +502,7 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
         if mapFolder then
             for _, folder in pairs(mapFolder:GetChildren()) do
                 local num = tonumber(folder.Name:match("^%d+"))
-                if num == TargetPS99Zone then
+                if num == Config.TargetPS99Zone then
                     local part = folder:FindFirstChildWhichIsA("BasePart", true)
                     if part then preTpPos = part.Position end
                     break
@@ -550,58 +511,60 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
         end
     end
 
-    if not preTpPos then return KLog("Error: Couldn't find center for Zone " .. TargetPS99Zone) end
+    if not preTpPos then return KLog("Error: Couldn't find center for Zone " .. Config.TargetPS99Zone) end
 
-    -- ОЧЕНЬ ВАЖНОЕ ИСПРАВЛЕНИЕ: Замораживаем игрока, чтобы он не упал в пустоту!
-    KLog("Anchoring character and waiting for map to load...")
+    -- ОЧЕНЬ ВАЖНОЕ ИСПРАВЛЕНИЕ: Замораживаем игрока НАД картой и принудительно грузим её!
+    KLog("Teleporting & Anchoring character...")
     hrp.Anchored = true
-    hrp.CFrame = CFrame.new(preTpPos + Vector3.new(0, 15, 0))
+    hrp.CFrame = CFrame.new(preTpPos + Vector3.new(0, 25, 0))
     
-    task.wait(1.5) -- Ждем прогрузки
-    hrp.Anchored = false -- Размораживаем
+    -- Родной способ Roblox прогрузить карту (помогает от StreamingEnabled)
+    pcall(function() LocalPlayer:RequestStreamAroundAsync(preTpPos, 5) end)
 
-    -- Ищем сундук в радиусе 600 студов от нас
+    -- Ждем, пока появятся объекты (цикл до 5 секунд)
     local things = workspace:FindFirstChild("__THINGS")
     local breakables = things and things:FindFirstChild("Breakables")
-    if not breakables then return KLog("Error: Breakables folder not found!") end
-
-    KLog("Scanning for the biggest object...")
+    
     local bestTarget = nil
     local maxVolume = -1
 
-    for _, b in pairs(breakables:GetChildren()) do
-        local pivot = b:GetPivot()
-        local dist = (pivot.Position - hrp.Position).Magnitude
-        
-        if dist < 600 then 
-            local volume = 0
-            if b:IsA("Model") then
-                local size = b:GetExtentsSize()
-                volume = size.X * size.Y * size.Z
-            elseif b:IsA("BasePart") then
-                volume = b.Size.X * b.Size.Y * b.Size.Z
-            end
+    KLog("Waiting for objects to spawn (Max 5s)...")
+    for i = 1, 10 do -- 10 попыток по 0.5 секунд
+        if breakables then
+            for _, b in pairs(breakables:GetChildren()) do
+                local pivot = b:GetPivot()
+                local dist = (pivot.Position - preTpPos).Magnitude
+                
+                if dist < 600 then 
+                    local volume = 0
+                    if b:IsA("Model") then
+                        local size = b:GetExtentsSize()
+                        volume = size.X * size.Y * size.Z
+                    elseif b:IsA("BasePart") then
+                        volume = b.Size.X * b.Size.Y * b.Size.Z
+                    end
 
-            if volume > maxVolume then
-                maxVolume = volume
-                bestTarget = b
+                    if volume > maxVolume then
+                        maxVolume = volume
+                        bestTarget = b
+                    end
+                end
             end
         end
+        -- Если мы нашли хоть что-то массивное, выходим из цикла ожидания
+        if bestTarget then break end
+        task.wait(0.5)
     end
 
+    -- РАЗМОРАЖИВАЕМ ИГРОКА!
+    hrp.Anchored = false 
+
+    -- Прыгаем на объект (или просто падаем на центр, если реально ничего не заспавнилось)
     if bestTarget then
         KLog("Success! Found Drop (Volume: " .. math.floor(maxVolume) .. ")")
-        hrp.CFrame = CFrame.new(bestTarget:GetPivot().Position + Vector3.new(0, 8, 0))
+        hrp.CFrame = bestTarget:GetPivot() * CFrame.new(0, 10, 0)
     else
-        KLog("Error: Nothing big found. Defaulting to any object nearby.")
-        -- Fallback: если объем не просчитался, прыгаем к самому первому попавшемуся
-        for _, b in pairs(breakables:GetChildren()) do
-            local dist = (b:GetPivot().Position - hrp.Position).Magnitude
-            if dist < 600 then
-                hrp.CFrame = CFrame.new(b:GetPivot().Position + Vector3.new(0, 8, 0))
-                return KLog("Used fallback teleport.")
-            end
-        end
+        KLog("Error: Waited 5 seconds but zone is still empty. Try jumping to another zone.")
     end
 end)
 
@@ -635,50 +598,63 @@ CreateButton(MM2Page, "TP to Lobby (MM2)", function()
 end)
 
 -- ===================================
--- SETTINGS & CONFIG BASE64
+-- SETTINGS & FULL CONFIG BASE64
 -- ===================================
-CreateTextBox(SettingsPage, "Custom Hub Size (ex. 75, 1.2)", function(text)
+SizeInputBox = CreateTextBox(SettingsPage, "Custom Hub Size (ex. 75, 1.2)", tostring(Config.UIScale), function(text)
     local num = text:match("[%d%.]+")
     if num then
         local scale = tonumber(num)
         if scale then
             if scale >= 10 then scale = scale / 100 end
             scale = math.clamp(scale, 0.4, 2.5) 
+            Config.UIScale = scale
             TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = scale}):Play()
+            KLog("Saved UI Size: " .. scale)
         end
     end
 end)
 
-local ConfigBox = CreateTextBox(SettingsPage, "Paste Base64 Code Here", function() end)
+local ConfigBox = CreateTextBox(SettingsPage, "Base64 Code (Import/Export)", "...", function() end)
 
-CreateButton(SettingsPage, "Export Data (Copy Base64)", function()
-    local json = HttpService:JSONEncode(SavedZones)
+CreateButton(SettingsPage, "EXPORT CONFIG (Copy All)", function()
+    local json = HttpService:JSONEncode(Config)
     local b64 = Base64.Encode(json)
     ConfigBox.Text = b64
     
     if setclipboard then
         pcall(setclipboard, b64)
-        KLog("Data Copied to Clipboard!")
+        KLog("Config Exported and Copied to Clipboard!")
     else
-        KLog("Clipboard not supported. Copy code manually from the box.")
+        KLog("Config Exported! Copy it manually from the box.")
     end
 end)
 
-CreateButton(SettingsPage, "Import Data (Load Base64)", function()
+CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     pcall(function()
         local b64 = ConfigBox.Text
-        if b64 == "" or b64 == "..." then return KLog("Box is empty!") end
+        if b64 == "" or b64 == "..." then return KLog("Error: Paste code first!") end
         
         local json = Base64.Decode(b64)
         local data = HttpService:JSONDecode(json)
         
         if type(data) == "table" then
-            SavedZones = data
-            KLog("Data Imported Successfully! Zones restored.")
+            Config = data
+            
+            -- Обновляем переменные и UI
+            TargetPS99Zone = Config.TargetPS99Zone or 1
+            ZoneInputBox.Text = tostring(Config.TargetPS99Zone)
+            
+            FlySpeedInput.Text = tostring(Config.FlySpeed)
+            
+            local newScale = Config.UIScale or 1.0
+            SizeInputBox.Text = tostring(newScale)
+            TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = newScale}):Play()
+
+            KLog("Config Loaded! All settings and Zones restored.")
         else
-            KLog("Error: Invalid Base64 code.")
+            KLog("Error: Invalid Base64 code format.")
         end
     end)
 end)
 
-KLog("Hub Loaded Successfully! Version 6.8")
+KLog("Hub Loaded Successfully! Version 7.0 Ultimate")
