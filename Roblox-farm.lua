@@ -1,235 +1,136 @@
 --[[ 
-    KIRIK LUXURY HUB v4.0 (MOBILE FIX)
+    KIRIK LUXURY HUB v5.0 (PS99 UPDATE)
 ]]
 
 if game.CoreGui:FindFirstChild("KirikHub") then
     game.CoreGui.KirikHub:Destroy()
 end
 
-_G.KirikHubActive = true
-
-local ScreenGui = Instance.new("ScreenGui")
+local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 ScreenGui.Name = "KirikHub"
-ScreenGui.Parent = game.CoreGui
 
--- ГЛАВНОЕ ОКНО
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
+local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
-MainFrame.Position = UDim2.new(0.5, -200, 0.5, -125)
 MainFrame.Size = UDim2.new(0, 400, 0, 250)
-MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.5, -200, 0.5, -125)
 MainFrame.Active = true
+Instance.new("UICorner", MainFrame)
+local Stroke = Instance.new("UIStroke", MainFrame)
+Stroke.Color = Color3.fromRGB(0, 255, 128)
+Stroke.Thickness = 2
 
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
-local UIStroke = Instance.new("UIStroke", MainFrame)
-UIStroke.Color = Color3.fromRGB(0, 255, 128)
-UIStroke.Thickness = 2
-
--- ВЕРХНЯЯ ПАНЕЛЬ
-local TopBar = Instance.new("Frame")
-TopBar.Name = "TopBar"
-TopBar.Parent = MainFrame
-TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+-- ВЕРХНЯЯ ПАНЕЛЬ И КНОПКИ (X, -)
+local TopBar = Instance.new("Frame", MainFrame)
 TopBar.Size = UDim2.new(1, 0, 0, 35)
-TopBar.Active = true
-Instance.new("UICorner", TopBar).CornerRadius = UDim.new(0, 8)
+TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Instance.new("UICorner", TopBar)
 
-local Title = Instance.new("TextLabel")
-Title.Parent = TopBar
-Title.BackgroundTransparency = 1
-Title.Position = UDim2.new(0.02, 0, 0, 0)
-Title.Size = UDim2.new(0.5, 0, 1, 0)
-Title.Font = Enum.Font.Code
+local Title = Instance.new("TextLabel", TopBar)
 Title.Text = "KIRIK LUXURY HUB"
 Title.TextColor3 = Color3.fromRGB(0, 255, 128)
-Title.TextSize = 18
-Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Font = Enum.Font.Code
+Title.Size = UDim2.new(0.5, 0, 1, 0)
+Title.BackgroundTransparency = 1
 
-local CloseBtn = Instance.new("TextButton", TopBar)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-CloseBtn.Position = UDim2.new(0.9, -5, 0.1, 0)
-CloseBtn.Size = UDim2.new(0, 30, 0, 28)
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CloseBtn.TextSize = 14
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
-
-local MinBtn = Instance.new("TextButton", TopBar)
-MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-MinBtn.Position = UDim2.new(0.9, -40, 0.1, 0)
-MinBtn.Size = UDim2.new(0, 30, 0, 28)
-MinBtn.Font = Enum.Font.GothamBold
-MinBtn.Text = "-"
-MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MinBtn.TextSize = 18
-Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
-
--- КОНТЕЙНЕРЫ
-local TabButtons = Instance.new("ScrollingFrame", MainFrame)
-TabButtons.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-TabButtons.Position = UDim2.new(0, 0, 0, 35)
-TabButtons.Size = UDim2.new(0, 100, 1, -35)
-TabButtons.BorderSizePixel = 0
-TabButtons.ScrollBarThickness = 0
-local TabLayout = Instance.new("UIListLayout", TabButtons)
-TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-local ContentFrame = Instance.new("Frame", MainFrame)
-ContentFrame.BackgroundTransparency = 1
-ContentFrame.Position = UDim2.new(0.25, 0, 0, 35)
-ContentFrame.Size = UDim2.new(0.75, 0, 1, -35)
-
---- ПЕРЕТАСКИВАНИЕ ДЛЯ ТЕЛЕФОНА ---
+-- ЛОГИКА ПЕРЕТАСКИВАНИЯ (MOBILE)
 local UIS = game:GetService("UserInputService")
-local dragging, dragInput, dragStart, startPos
-
+local dragStart, startPos, dragging
 TopBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
         startPos = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
     end
 end)
-
-TopBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-
 UIS.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
+    if dragging and input.UserInputType == Enum.UserInputType.Touch then
         local delta = input.Position - dragStart
         MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
-
---- СВОРАЧИВАНИЕ ---
-local isMinimized = false
-MinBtn.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    if isMinimized then
-        MinBtn.Text = "+"
-        MainFrame.Size = UDim2.new(0, 400, 0, 35)
-        TabButtons.Visible = false
-        ContentFrame.Visible = false
-    else
-        MinBtn.Text = "-"
-        MainFrame.Size = UDim2.new(0, 400, 0, 250)
-        TabButtons.Visible = true
-        ContentFrame.Visible = true
-    end
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch then dragging = false end
 end)
 
-CloseBtn.MouseButton1Click:Connect(function()
-    _G.KirikHubActive = false
-    ScreenGui:Destroy()
-end)
-
---- ФУНКЦИИ ИНТЕРФЕЙСА ---
-local function CreatePage(name)
-    local Page = Instance.new("ScrollingFrame", ContentFrame)
-    Page.Name = name .. "Page"
-    Page.Size = UDim2.new(1, 0, 1, 0)
-    Page.BackgroundTransparency = 1
-    Page.Visible = false
-    Page.ScrollBarThickness = 4
-    Page.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 128)
-    Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    
-    local ListLayout = Instance.new("UIListLayout", Page)
-    ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    ListLayout.Padding = UDim.new(0, 10)
-    ListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    
-    Instance.new("UIPadding", Page).PaddingTop = UDim.new(0, 10)
-    return Page
-end
-
-local function CreateButton(text, parent, callback)
-    local btn = Instance.new("TextButton", parent)
-    btn.Size = UDim2.new(0.9, 0, 0, 40)
-    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
-    
-    local btnStroke = Instance.new("UIStroke", btn)
-    btnStroke.Color = Color3.fromRGB(0, 255, 128)
-    btnStroke.Thickness = 1
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    
-    btn.MouseButton1Click:Connect(callback)
-end
-
-local Pages = {}
-local function CreateTabButton(text, page)
-    table.insert(Pages, page)
-    local btn = Instance.new("TextButton", TabButtons)
-    btn.Size = UDim2.new(1, 0, 0, 45)
-    btn.BackgroundTransparency = 1
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    btn.Font = Enum.Font.GothamBlack
-    btn.TextSize = 14
-    
-    btn.MouseButton1Click:Connect(function()
-        for _, p in pairs(Pages) do p.Visible = false end
-        page.Visible = true
-    end)
-end
+-- ПЕРЕМЕННЫЕ ФУНКЦИЙ
+local noclip = false
+local flying = false
+local speed = 50
 
 -- СТРАНИЦЫ
-local MM2Page = CreatePage("MM2")
-local PS99Page = CreatePage("PS99")
-local AdoptPage = CreatePage("Adopt")
+local Content = Instance.new("Frame", MainFrame)
+Content.Size = UDim2.new(0.75, 0, 1, -35)
+Content.Position = UDim2.new(0.25, 0, 0, 35)
+Content.BackgroundTransparency = 1
 
-CreateTabButton("MM2", MM2Page)
-CreateTabButton("PET SIM 99", PS99Page)
-CreateTabButton("ADOPT ME", AdoptPage)
+local PS99Page = Instance.new("ScrollingFrame", Content)
+PS99Page.Size = UDim2.new(1,0,1,0)
+PS99Page.BackgroundTransparency = 1
+local List = Instance.new("UIListLayout", PS99Page)
+List.HorizontalAlignment = Enum.HorizontalAlignment.Center
+List.Padding = UDim.new(0, 10)
 
---- КНОПКИ MM2 ---
-CreateButton("ESP Игроков", MM2Page, function()
-    for _, p in pairs(game.Players:GetPlayers()) do
-        if p ~= game.Players.LocalPlayer and p.Character then
-            local hl = p.Character:FindFirstChild("Highlight") or Instance.new("Highlight", p.Character)
-            hl.FillColor = Color3.fromRGB(0, 255, 128)
+-- КНОПКИ ГЕНЕРАТОР
+local function CreateButton(txt, parent, cb)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(0.9, 0, 0, 40)
+    b.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    b.Text = txt
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Font = Enum.Font.GothamBold
+    local s = Instance.new("UIStroke", b)
+    s.Color = Color3.fromRGB(0, 255, 128)
+    Instance.new("UICorner", b)
+    b.MouseButton1Click:Connect(cb)
+end
+
+-- ФУНКЦИИ PS99
+CreateButton("ТП к ближайшей монете", PS99Page, function()
+    local breakables = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Breakables")
+    if breakables then
+        local target = nil
+        local dist = math.huge
+        for _, v in pairs(breakables:GetChildren()) do
+            if v:IsA("BasePart") then
+                local d = (game.Players.LocalPlayer.Character.HumanoidRootPart.Position - v.Position).Magnitude
+                if d < dist then dist = d target = v end
+            end
         end
+        if target then game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame = target.CFrame end
     end
 end)
 
-CreateButton("ТП к Монете", MM2Page, function()
-    local coins = workspace:FindFirstChild("Normal") and workspace.Normal:FindFirstChild("CoinContainer")
-    if coins then
-        local coin = coins:FindFirstChildWhichIsA("BasePart") or coins:FindFirstChildWhichIsA("Model")
-        if coin then
-            local Root = game.Players.LocalPlayer.Character.HumanoidRootPart
-            local oldPos = Root.CFrame
-            Root.CFrame = coin.CFrame
-            task.wait(0.2)
-            Root.CFrame = oldPos
-        end
+CreateButton("Noclip (Вкл/Выкл)", PS99Page, function()
+    noclip = not noclip
+    game:GetService("StarterGui"):SetCore("SendNotification", {Title = "Noclip", Text = noclip and "Включен" or "Выключен"})
+end)
+
+CreateButton("Fly (Вкл/Выкл)", PS99Page, function()
+    flying = not flying
+    local lp = game.Players.LocalPlayer
+    local char = lp.Character
+    local hrp = char.HumanoidRootPart
+    if flying then
+        local bv = Instance.new("BodyVelocity", hrp)
+        bv.Name = "KirikFly"
+        bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bv.Velocity = Vector3.new(0,0,0)
+    else
+        if hrp:FindFirstChild("KirikFly") then hrp.KirikFly:Destroy() end
     end
 end)
 
---- КНОПКИ PS99 ---
-CreateButton("Магнит Сфер", PS99Page, function()
-    local orbs = workspace:FindFirstChild("Orbs")
-    if orbs then
-        for _, orb in pairs(orbs:GetChildren()) do
-            orb.CFrame = game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame
+-- ЦИКЛЫ
+game:GetService("RunService").Stepped:Connect(function()
+    if noclip then
+        for _, v in pairs(game.Players.LocalPlayer.Character:GetDescendants()) do
+            if v:IsA("BasePart") then v.CanCollide = false end
+        end
+    end
+    if flying then
+        local hrp = game.Players.LocalPlayer.Character.HumanoidRootPart
+        if hrp:FindFirstChild("KirikFly") then
+            hrp.KirikFly.Velocity = game.Workspace.CurrentCamera.CFrame.LookVector * speed
         end
     end
 end)
-
--- ОТКРЫВАЕМ ПЕРВУЮ ВКЛАДКУ
-MM2Page.Visible = true
