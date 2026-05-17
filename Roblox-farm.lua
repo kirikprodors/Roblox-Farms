@@ -1,7 +1,6 @@
 --[[ 
-    KIRIK LUXURY HUB v6.0 (REMASTERED)
-    Optimized for Mobile Executors (Delta, Hydrogen, etc.)
-    Zero Bugs, Touch-Friendly, Modern Gamer UI
+    KIRIK LUXURY HUB v6.1 (ULTIMATE MOBILE FIX)
+    Added: Minimize Button, Size Scaling (75-150%), Fixed Dragging Issue
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -12,7 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Защита от дубликатов при повторном запуске
+-- Защита от дубликатов
 local HubName = "KirikLuxuryHub_V6"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
@@ -40,11 +39,18 @@ ScreenGui.Parent = targetGui
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 500, 0, 320)
-MainFrame.Position = UDim2.new(0.5, -250, 0.5, -160)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Position = UDim2.new(0.5, 0, 0.4, 0)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
+MainFrame.Active = true -- Блокирует клики сквозь хаб
 MainFrame.Parent = ScreenGui
+
+-- Масштабирование всего хаба (UIScale)
+local MainScale = Instance.new("UIScale")
+MainScale.Scale = 1
+MainScale.Parent = MainFrame
 
 local MainCorner = Instance.new("UICorner")
 MainCorner.CornerRadius = UDim.new(0, 10)
@@ -61,6 +67,7 @@ TopBar.Name = "TopBar"
 TopBar.Size = UDim2.new(1, 0, 0, 40)
 TopBar.BackgroundColor3 = Theme.TopBar
 TopBar.BorderSizePixel = 0
+TopBar.Active = true
 TopBar.Parent = MainFrame
 
 local TopBarCorner = Instance.new("UICorner")
@@ -86,6 +93,7 @@ Title.TextSize = 16
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = TopBar
 
+-- КНОПКИ ЗАКРЫТИЯ И СВОРАЧИВАНИЯ
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
 CloseBtn.Position = UDim2.new(1, -40, 0.5, -15)
@@ -97,39 +105,71 @@ CloseBtn.TextSize = 14
 CloseBtn.Parent = TopBar
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
+local MinBtn = Instance.new("TextButton")
+MinBtn.Size = UDim2.new(0, 30, 0, 30)
+MinBtn.Position = UDim2.new(1, -75, 0.5, -15)
+MinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+MinBtn.Text = "-"
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.TextSize = 18
+MinBtn.Parent = TopBar
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
+
+-- ЛОГИКА СВОРАЧИВАНИЯ (- / +)
+local isMinimized = false
+local normalSize = UDim2.new(0, 500, 0, 320)
+local minSize = UDim2.new(0, 500, 0, 40)
+
+MinBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    if isMinimized then
+        MinBtn.Text = "+"
+        TopBarFix.Visible = false -- Делаем углы круглыми со всех сторон
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = minSize}):Play()
+    else
+        MinBtn.Text = "-"
+        TopBarFix.Visible = true -- Возвращаем плоский низ панели
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = normalSize}):Play()
+    end
+end)
+
+-- ЛОГИКА ЗАКРЫТИЯ (Анимация скейла)
 CloseBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(MainFrame, TweenInfo.new(0.2), {Size = UDim2.new(0,0,0,0)}):Play()
+    TweenService:Create(MainScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Scale = 0}):Play()
     task.wait(0.2)
     ScreenGui:Destroy()
 end)
 
--- ПЛАВНОЕ ПЕРЕТАСКИВАНИЕ (MOBILE + PC)
-local dragging, dragInput, dragStart, startPos
-local function updateDrag(input)
-    local delta = input.Position - dragStart
-    local targetPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    TweenService:Create(MainFrame, TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Position = targetPos}):Play()
-end
+-- ИСПРАВЛЕННОЕ ПЛАВНОЕ ПЕРЕТАСКИВАНИЕ (Только за TopBar)
+local dragging = false
+local dragInput = nil
+local dragStart = nil
+local startPos = nil
 
 TopBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
+        dragInput = input
         dragStart = input.Position
         startPos = MainFrame.Position
+
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+                dragInput = nil
+            end
         end)
     end
 end)
 
-TopBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-
 UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then updateDrag(input) end
+    -- Проверяем, что двигается именно тот палец, который нажал на шапку
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        local targetPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        TweenService:Create(MainFrame, TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Position = targetPos}):Play()
+    end
 end)
 
 -- БОКОВАЯ ПАНЕЛЬ (ВКЛАДКИ)
@@ -139,6 +179,7 @@ Sidebar.Position = UDim2.new(0, 0, 0, 40)
 Sidebar.BackgroundColor3 = Theme.Sidebar
 Sidebar.BorderSizePixel = 0
 Sidebar.ScrollBarThickness = 0
+Sidebar.Active = true
 Sidebar.Parent = MainFrame
 
 local SidebarLayout = Instance.new("UIListLayout")
@@ -224,7 +265,7 @@ end
 
 local function CreateButton(page, text, callback)
     local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(0.95, 0, 0, 45) -- Крупные для пальцев
+    Btn.Size = UDim2.new(0.95, 0, 0, 45)
     Btn.BackgroundColor3 = Theme.ElementBg
     Btn.Text = text
     Btn.Font = Enum.Font.GothamBold
@@ -304,6 +345,7 @@ end
 local UniversalPage = CreateTab("Universal")
 local PS99Page = CreateTab("PS99")
 local MM2Page = CreateTab("MM2")
+local SettingsPage = CreateTab("Settings")
 
 -- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 local FlySpeed = 50
@@ -311,7 +353,7 @@ local FlyLoop
 local NoclipLoop
 local ESP_Loop
 
--- СУПЕР-МОБИЛЬНЫЙ FLY (Использует джойстик!)
+-- СУПЕР-МОБИЛЬНЫЙ FLY
 local function ToggleFly(state)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -338,7 +380,6 @@ local function ToggleFly(state)
             if moveVector.Magnitude > 0 then
                 local fwd = cam.CFrame.LookVector
                 local right = cam.CFrame.RightVector
-                -- Движение ровно по камере + джойстику
                 bv.Velocity = ((fwd * -moveVector.Z) + (right * moveVector.X)) * FlySpeed
             else
                 bv.Velocity = Vector3.zero
@@ -421,7 +462,7 @@ CreateButton(PS99Page, "TP to Random Coin", function()
                 local char = LocalPlayer.Character
                 if char and char:FindFirstChild("HumanoidRootPart") then
                     char.HumanoidRootPart.CFrame = pos + Vector3.new(0, 5, 0)
-                    return -- Телепортируемся к первой и выходим
+                    return
                 end
             end
         end
@@ -455,4 +496,18 @@ CreateButton(MM2Page, "TP to Lobby (MM2)", function()
             char.HumanoidRootPart.CFrame = spawns[math.random(1, #spawns)].CFrame + Vector3.new(0, 3, 0)
         end
     end
+end)
+
+-- НАПОЛНЕНИЕ: НАСТРОЙКИ (МАСШТАБ ХАБА)
+CreateButton(SettingsPage, "UI Size: 75% (Small)", function()
+    TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 0.75}):Play()
+end)
+CreateButton(SettingsPage, "UI Size: 100% (Normal)", function()
+    TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 1.0}):Play()
+end)
+CreateButton(SettingsPage, "UI Size: 125% (Large)", function()
+    TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 1.25}):Play()
+end)
+CreateButton(SettingsPage, "UI Size: 150% (Huge)", function()
+    TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 1.5}):Play()
 end)
