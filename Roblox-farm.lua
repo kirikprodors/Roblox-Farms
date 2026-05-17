@@ -1,131 +1,173 @@
 --[[ 
-    KIRIK LUXURY HUB v2.0 (Mobile UI)
+    KIRIK LUXURY HUB v3.0 (ULTRA GAMER EDITION)
 ]]
 
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
 local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "KirikHub_V3"
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.ResetOnSpawn = false
+
+-- ГЛАВНОЕ ОКНО
 local MainFrame = Instance.new("Frame")
-local TabButtons = Instance.new("Frame")
-local ContentFrame = Instance.new("Frame")
-local UICorner = Instance.new("UICorner")
-
--- Настройка главного контейнера
-ScreenGui.Name = "KirikHub"
-ScreenGui.Parent = game.CoreGui -- Чтобы Delta его видела
-
--- Главное окно
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MainFrame.Position = UDim2.new(0.3, 0, 0.2, 0)
-MainFrame.Size = UDim2.new(0, 400, 0, 250)
-MainFrame.Active = true
-MainFrame.Draggable = true -- Можно двигать пальцем по экрану
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.BorderSizePixel = 0
+MainFrame.Position = UDim2.new(0.3, 0, 0.3, 0)
+MainFrame.Size = UDim2.new(0, 420, 0, 280)
+MainFrame.ClipsDescendants = true
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Color3.fromRGB(0, 255, 255) -- Неоновый бирюзовый
+MainStroke.Thickness = 2
+MainStroke.Parent = MainFrame
 
 local MainCorner = Instance.new("UICorner", MainFrame)
+MainCorner.CornerRadius = ToolUnits.new(0, 8)
 
--- Панель вкладок (слева)
-TabButtons.Name = "TabButtons"
-TabButtons.Parent = MainFrame
-TabButtons.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-TabButtons.Size = UDim2.new(0, 100, 1, 0)
+-- ВЕРХНЯЯ ПАНЕЛЬ (Header)
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Parent = MainFrame
+TopBar.Size = UDim2.new(1, 0, 0, 35)
+TopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 
-local TabCorner = Instance.new("UICorner", TabButtons)
+local Title = Instance.new("TextLabel")
+Title.Parent = TopBar
+Title.Size = UDim2.new(0.7, 0, 1, 0)
+Title.Position = UDim2.new(0.05, 0, 0, 0)
+Title.Text = "KIRIK LUXURY HUB | V3.0"
+Title.TextColor3 = Color3.fromRGB(0, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.BackgroundTransparency = 1
 
--- Контентная часть (справа)
-ContentFrame.Name = "ContentFrame"
-ContentFrame.Parent = MainFrame
-ContentFrame.Position = UDim2.new(0.25, 0, 0, 0)
-ContentFrame.Size = UDim2.new(0.75, 0, 1, 0)
-ContentFrame.BackgroundTransparency = 1
+-- КНОПКА ЗАКРЫТИЯ (X)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = TopBar
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -35, 0, 2)
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 18
 
--- Функция создания страниц
-local function CreatePage(name)
-    local Page = Instance.new("ScrollingFrame")
-    Page.Name = name .. "Page"
-    Page.Parent = ContentFrame
-    Page.Size = UDim2.new(1, 0, 1, 0)
-    Page.BackgroundTransparency = 1
-    Page.Visible = false
-    Page.ScrollBarThickness = 2
-    return Page
-end
+local CloseCorner = Instance.new("UICorner", CloseBtn)
 
-local MM2Page = CreatePage("MM2")
-local PS99Page = CreatePage("PS99")
+-- КНОПКА СВЕРНУТЬ (-)
+local MinBtn = Instance.new("TextButton")
+MinBtn.Parent = TopBar
+MinBtn.Size = UDim2.new(0, 30, 0, 30)
+MinBtn.Position = UDim2.new(1, -70, 0, 2)
+MinBtn.Text = "-"
+MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 18
 
--- Функция создания кнопок функций
-local function CreateButton(text, parent, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.9, 0, 0, 40)
-    btn.Position = UDim2.new(0.05, 0, 0, #parent:GetChildren() * 45)
-    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 14
-    btn.Parent = parent
+local MinCorner = Instance.new("UICorner", MinBtn)
+
+-- КОНТЕНТ И ВКЛАДКИ
+local Content = Instance.new("Frame")
+Content.Name = "Content"
+Content.Parent = MainFrame
+Content.Size = UDim2.new(1, 0, 1, -35)
+Content.Position = UDim2.new(0, 0, 0, 35)
+Content.BackgroundTransparency = 1
+
+local TabList = Instance.new("Frame")
+TabList.Parent = Content
+TabList.Size = UDim2.new(0, 110, 1, 0)
+TabList.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+
+local Pages = Instance.new("Frame")
+Pages.Parent = Content
+Pages.Position = UDim2.new(0, 110, 0, 0)
+Pages.Size = UDim2.new(1, -110, 1, 0)
+Pages.BackgroundTransparency = 1
+
+-- ЛОГИКА ПЕРЕТАСКИВАНИЯ (MOBILE FRIENDLY)
+local dragging, dragInput, dragStart, startPos
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+-- ЛОГИКА СВЕРТЫВАНИЯ
+local isMinimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    if not isMinimized then
+        MainFrame:TweenSize(UDim2.new(0, 420, 0, 35), "Out", "Quint", 0.3, true)
+        Content.Visible = false
+        MinBtn.Text = "+"
+    else
+        MainFrame:TweenSize(UDim2.new(0, 420, 0, 280), "Out", "Quint", 0.3, true)
+        Content.Visible = true
+        MinBtn.Text = "-"
+    end
+    isMinimized = not isMinimized
+end)
+
+-- ЛОГИКА ЗАКРЫТИЯ
+CloseBtn.MouseButton1Click:Connect(function()
+    _G.AutoFarm = false -- Останавливаем все циклы
+    ScreenGui:Destroy()
+end)
+
+-- ФУНКЦИЯ СОЗДАНИЯ КНОПОК ФУНКЦИЙ
+local function AddButton(name, page, callback)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0.9, 0, 0, 35)
+    b.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    b.Text = name
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 12
+    b.Parent = page
     
-    local btnCorner = Instance.new("UICorner", btn)
-    btn.MouseButton1Click:Connect(callback)
+    local bc = Instance.new("UICorner", b)
+    b.MouseButton1Click:Connect(callback)
+    
+    local bs = Instance.new("UIListLayout", page)
+    bs.Padding = ToolUnits.new(0, 5)
+    bs.HorizontalAlignment = Enum.HorizontalAlignment.Center
 end
 
--- --- КНОПКИ ДЛЯ MM2 ---
-CreateButton("Подсветка (ESP)", MM2Page, function()
-    for _, p in pairs(game.Players:GetPlayers()) do
-        if p ~= game.Players.LocalPlayer and p.Character then
-            local hl = p.Character:FindFirstChild("Highlight") or Instance.new("Highlight", p.Character)
-            hl.FillColor = Color3.fromRGB(255, 255, 255)
-        end
-    end
+-- СОЗДАЕМ СТРАНИЦЫ
+local MM2Page = Instance.new("ScrollingFrame", Pages)
+MM2Page.Size = UDim2.new(1,0,1,0)
+MM2Page.BackgroundTransparency = 1
+MM2Page.Visible = true
+
+-- ДОБАВЛЯЕМ КНОПКИ (Пример для MM2)
+AddButton("MM2 ESP (Wallhack)", MM2Page, function()
+    print("ESP Активирован")
+    -- Тут код ESP
 end)
 
-CreateButton("ТП к монете (Coin TP)", MM2Page, function()
-    local coins = workspace:FindFirstChild("Normal") and workspace.Normal:FindFirstChild("CoinContainer")
-    if coins then
-        local coin = coins:FindFirstChildWhichIsA("BasePart") or coins:FindFirstChildWhichIsA("Model")
-        if coin then
-            local Root = game.Players.LocalPlayer.Character.HumanoidRootPart
-            local oldPos = Root.CFrame
-            Root.CFrame = coin.CFrame
-            task.wait(0.2)
-            Root.CFrame = oldPos
-        end
-    end
+AddButton("Fast Coin TP", MM2Page, function()
+    print("ТП к монете...")
 end)
 
--- --- КНОПКИ ДЛЯ PS99 ---
-CreateButton("Притянуть сферы (Collect)", PS99Page, function()
-    local orbs = workspace:FindFirstChild("Orbs")
-    if orbs then
-        for _, orb in pairs(orbs:GetChildren()) do
-            orb.CFrame = game.Players.LocalPlayer.Character.HumanoidRootPart.CFrame
-        end
-    end
-end)
-
--- --- КНОПКИ ПЕРЕКЛЮЧЕНИЯ ВКЛАДОК ---
-local function SwitchTab(page)
-    MM2Page.Visible = false
-    PS99Page.Visible = false
-    page.Visible = true
-end
-
-local btnMM2 = Instance.new("TextButton", TabButtons)
-btnMM2.Size = UDim2.new(1, 0, 0, 40)
-btnMM2.Text = "MM2"
-btnMM2.BackgroundTransparency = 1
-btnMM2.TextColor3 = Color3.new(1,1,1)
-btnMM2.MouseButton1Click:Connect(function() SwitchTab(MM2Page) end)
-
-local btnPS99 = Instance.new("TextButton", TabButtons)
-btnPS99.Size = UDim2.new(1, 0, 0, 40)
-btnPS99.Position = UDim2.new(0, 0, 0, 45)
-btnPS99.Text = "Pet Sim 99"
-btnPS99.BackgroundTransparency = 1
-btnPS99.TextColor3 = Color3.new(1,1,1)
-btnPS99.MouseButton1Click:Connect(function() SwitchTab(PS99Page) end)
-
--- Открываем первую вкладку по умолчанию
-SwitchTab(MM2Page)
-
-print("GUI загружен!")
+print("KIRIK HUB V3 Загружен успешно!")
