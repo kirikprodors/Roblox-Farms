@@ -1,7 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v6.6 (PRO MOBILE EDITION)
-    Fixed: PS99 Smart TP (Now uses Manual Zone Selection + Physical Volume Scanning)
-    Bypass: No longer relies on game's hidden Library scripts (100% Future-Proof)
+    KIRIK LUXURY HUB v6.7 (PRO MOBILE EDITION)
+    Added: Custom Zone Center Saving with File Persistence (JSON)
+    Fixed: Inaccurate Pre-Teleports in PS99
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -9,6 +9,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local IsAdmin = (LocalPlayer.UserId == 5463685844) -- Твой ID
@@ -467,18 +468,56 @@ CreateToggle(UniversalPage, "Noclip", ToggleNoclip)
 CreateToggle(UniversalPage, "Player ESP", ToggleESP)
 
 -- ===================================
--- PET SIMULATOR 99 (NEW LOGIC)
+-- PET SIMULATOR 99 (CUSTOM ZONES SYSTEM)
 -- ===================================
-local TargetPS99Zone = 1 -- Зона по умолчанию
+local TargetPS99Zone = 1
+local SavedZonesFile = "KirikHub_PS99_Zones.json"
+local SavedZones = {}
+
+-- Загрузка сохраненных зон из файла (если поддерживается экзекутором)
+local function LoadZones()
+    pcall(function()
+        if isfile and isfile(SavedZonesFile) and readfile then
+            local data = readfile(SavedZonesFile)
+            local decoded = HttpService:JSONDecode(data)
+            if type(decoded) == "table" then
+                SavedZones = decoded
+                KLog("Successfully loaded saved zones from device.")
+            end
+        end
+    end)
+end
+LoadZones()
 
 CreateTextBox(PS99Page, "Set Target Zone (ex: 33)", function(text)
     local num = tonumber(text:match("%d+"))
     if num then
         TargetPS99Zone = num
-        KLog("Saved Target Zone: " .. tostring(TargetPS99Zone))
+        KLog("Target Zone changed to: " .. tostring(TargetPS99Zone))
     else
         KLog("Invalid Zone Number!")
     end
+end)
+
+-- КНОПКА СОХРАНЕНИЯ ЦЕНТРА ЗОНЫ
+CreateButton(PS99Page, "Save Current Pos as Zone Center", function()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return KLog("Error: Character not found") end
+
+    local pos = hrp.Position
+    SavedZones[tostring(TargetPS99Zone)] = {X = pos.X, Y = pos.Y, Z = pos.Z}
+    
+    -- Пытаемся сохранить в файл
+    pcall(function()
+        if writefile then
+            local json = HttpService:JSONEncode(SavedZones)
+            writefile(SavedZonesFile, json)
+            KLog("File written successfully.")
+        end
+    end)
+    
+    KLog("SAVED! Zone " .. TargetPS99Zone .. " center set to your current position.")
 end)
 
 CreateButton(PS99Page, "TP to Best Drop in Zone", function()
@@ -488,32 +527,39 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
 
     KLog("Initiating TP to Zone: " .. tostring(TargetPS99Zone))
 
-    -- 1. Находим папку зоны и прыгаем туда (Обход StreamingEnabled)
-    local mapFolder = workspace:FindFirstChild("Map")
-    local foundZonePart = nil
+    -- 1. Определяем, куда сначала прыгать для прогрузки (Pre-Teleport)
+    local preTpPos = nil
+    local savedData = SavedZones[tostring(TargetPS99Zone)]
 
-    if mapFolder then
-        for _, folder in pairs(mapFolder:GetChildren()) do
-            -- Извлекаем число из названия (Например "33 | Oasis" -> 33)
-            local num = tonumber(folder.Name:match("^%d+"))
-            if num == TargetPS99Zone then
-                foundZonePart = folder:FindFirstChildWhichIsA("BasePart", true)
-                break
+    if savedData then
+        -- Если игрок сохранил центр вручную (Идеальный вариант)
+        preTpPos = Vector3.new(savedData.X, savedData.Y, savedData.Z)
+        KLog("Using Custom Saved Center for Zone " .. TargetPS99Zone)
+    else
+        -- Если не сохранил, ищем как раньше (может быть криво)
+        KLog("Warning: No custom center saved. Auto-detecting... (Might be inaccurate)")
+        local mapFolder = workspace:FindFirstChild("Map")
+        if mapFolder then
+            for _, folder in pairs(mapFolder:GetChildren()) do
+                local num = tonumber(folder.Name:match("^%d+"))
+                if num == TargetPS99Zone then
+                    local part = folder:FindFirstChildWhichIsA("BasePart", true)
+                    if part then preTpPos = part.Position end
+                    break
+                end
             end
         end
     end
 
-    if not foundZonePart then
-        return KLog("Error: Zone " .. TargetPS99Zone .. " not found on the map!")
+    if not preTpPos then
+        return KLog("Error: Couldn't find or generate a center for Zone " .. TargetPS99Zone)
     end
 
-    KLog("Zone found. Pre-teleporting to load objects...")
-    hrp.CFrame = foundZonePart.CFrame + Vector3.new(0, 15, 0)
-    
-    -- Ожидаем 1.5 сек, чтобы объекты 100% прогрузились в мире
+    -- Прыгаем в центр и ждем прогрузки
+    hrp.CFrame = CFrame.new(preTpPos + Vector3.new(0, 10, 0))
     task.wait(1.5)
 
-    -- 2. Ищем самый ФИЗИЧЕСКИ БОЛЬШОЙ объект (Сейф/Сундук всегда больше монетки)
+    -- 2. Ищем самый ФИЗИЧЕСКИ БОЛЬШОЙ объект вокруг (радиус 300 студов от центра)
     local things = workspace:FindFirstChild("__THINGS")
     local breakables = things and things:FindFirstChild("Breakables")
     if not breakables then return KLog("Error: Breakables folder not found!") end
@@ -524,9 +570,10 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
 
     for _, b in pairs(breakables:GetChildren()) do
         local pivot = b:GetPivot()
-        -- Фильтр: Проверяем, что объект находится рядом с нами (в нашей зоне)
         local dist = (pivot.Position - hrp.Position).Magnitude
-        if dist < 400 then 
+        
+        -- Сканируем только те объекты, которые находятся рядом (в прогруженной зоне)
+        if dist < 300 then 
             local volume = 0
             if b:IsA("Model") then
                 local size = b:GetExtentsSize()
@@ -542,7 +589,7 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
         end
     end
 
-    -- 3. Телепорт к победителю!
+    -- 3. Телепорт на сам сундук!
     if bestTarget then
         KLog("Success! Found Massive Drop! (Volume: " .. math.floor(maxVolume) .. ")")
         hrp.CFrame = CFrame.new(bestTarget:GetPivot().Position + Vector3.new(0, 8, 0))
@@ -600,4 +647,4 @@ CreateButton(SettingsPage, "Reset Size (100%)", function()
     TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 1.0}):Play()
 end)
 
-KLog("Hub Loaded Successfully! Version 6.6")
+KLog("Hub Loaded Successfully! Version 6.7")
