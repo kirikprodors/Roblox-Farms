@@ -1,6 +1,6 @@
 --[[ 
-    KIRIK LUXURY HUB v6.1 (ULTIMATE MOBILE FIX)
-    Added: Minimize Button, Size Scaling (75-150%), Fixed Dragging Issue
+    KIRIK LUXURY HUB v6.2 (PRO MOBILE EDITION)
+    Fixed: Auto-Shifting Position, Joystick Drag Bug, Custom UI Scaling
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -24,6 +24,7 @@ local Theme = {
     Sidebar = Color3.fromRGB(22, 22, 28),
     TopBar = Color3.fromRGB(18, 18, 24),
     Accent = Color3.fromRGB(0, 255, 128),
+    DragMode = Color3.fromRGB(255, 170, 0), -- Цвет при перетаскивании
     Text = Color3.fromRGB(240, 240, 240),
     ElementBg = Color3.fromRGB(30, 30, 38),
     ElementHover = Color3.fromRGB(40, 40, 50)
@@ -39,15 +40,15 @@ ScreenGui.Parent = targetGui
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 500, 0, 320)
-MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-MainFrame.Position = UDim2.new(0.5, 0, 0.4, 0)
+-- AnchorPoint (0.5, 0) решает проблему с уезжанием вверх при анимациях!
+MainFrame.AnchorPoint = Vector2.new(0.5, 0)
+MainFrame.Position = UDim2.new(0.5, 0, 0.2, 0)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
-MainFrame.Active = true -- Блокирует клики сквозь хаб
+MainFrame.Active = true 
 MainFrame.Parent = ScreenGui
 
--- Масштабирование всего хаба (UIScale)
 local MainScale = Instance.new("UIScale")
 MainScale.Scale = 1
 MainScale.Parent = MainFrame
@@ -67,7 +68,6 @@ TopBar.Name = "TopBar"
 TopBar.Size = UDim2.new(1, 0, 0, 40)
 TopBar.BackgroundColor3 = Theme.TopBar
 TopBar.BorderSizePixel = 0
-TopBar.Active = true
 TopBar.Parent = MainFrame
 
 local TopBarCorner = Instance.new("UICorner")
@@ -82,7 +82,7 @@ TopBarFix.BorderSizePixel = 0
 TopBarFix.Parent = TopBar
 
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Size = UDim2.new(0, 300, 1, 0)
 Title.Position = UDim2.new(0, 15, 0, 0)
 Title.BackgroundTransparency = 1
 Title.Text = "KIRIK LUXURY <font color='#00ff80'>HUB</font>"
@@ -125,49 +125,76 @@ MinBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
         MinBtn.Text = "+"
-        TopBarFix.Visible = false -- Делаем углы круглыми со всех сторон
+        TopBarFix.Visible = false
         TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = minSize}):Play()
     else
         MinBtn.Text = "-"
-        TopBarFix.Visible = true -- Возвращаем плоский низ панели
+        TopBarFix.Visible = true
         TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = normalSize}):Play()
     end
 end)
 
--- ЛОГИКА ЗАКРЫТИЯ (Анимация скейла)
+-- ЛОГИКА ЗАКРЫТИЯ
 CloseBtn.MouseButton1Click:Connect(function()
     TweenService:Create(MainScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Scale = 0}):Play()
     task.wait(0.2)
     ScreenGui:Destroy()
 end)
 
--- ИСПРАВЛЕННОЕ ПЛАВНОЕ ПЕРЕТАСКИВАНИЕ (Только за TopBar)
-local dragging = false
+-- ========================================== --
+-- ЛОГИКА ПЕРЕТАСКИВАНИЯ (ДВОЙНОЙ ТАП РЕЖИМ)
+-- ========================================== --
+local dragMode = false
+local lastTap = 0
 local dragInput = nil
 local dragStart = nil
 local startPos = nil
 
-TopBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragInput = input
-        dragStart = input.Position
-        startPos = MainFrame.Position
+MainFrame.InputBegan:Connect(function(input)
+    -- Игнорируем нажатия, если игрок печатает в TextBox
+    if UserInputService:GetFocusedTextBox() then return end
 
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-                dragInput = nil
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        local now = tick()
+        -- Защита от случайного срабатывания Touch+Mouse одновременно на мобилках
+        if now - lastTap < 0.05 then return end 
+
+        if now - lastTap <= 0.4 then
+            -- Сработал двойной тап!
+            dragMode = not dragMode
+            if dragMode then
+                MainStroke.Color = Theme.DragMode
+                Title.Text = "KIRIK LUXURY <font color='#00ff80'>HUB</font> <font color='#ffaa00' size='12'>[DRAG MODE]</font>"
+            else
+                MainStroke.Color = Theme.Accent
+                Title.Text = "KIRIK LUXURY <font color='#00ff80'>HUB</font>"
             end
-        end)
+            lastTap = 0
+        else
+            lastTap = now
+        end
+
+        if dragMode then
+            dragInput = input
+            dragStart = input.Position
+            startPos = MainFrame.Position
+        end
+    end
+end)
+
+MainFrame.InputEnded:Connect(function(input)
+    if input == dragInput then
+        dragInput = nil
     end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    -- Проверяем, что двигается именно тот палец, который нажал на шапку
-    if input == dragInput and dragging then
+    if dragMode and input == dragInput then
         local delta = input.Position - dragStart
-        local targetPos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        local targetPos = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
         TweenService:Create(MainFrame, TweenInfo.new(0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Position = targetPos}):Play()
     end
 end)
@@ -338,6 +365,50 @@ local function CreateToggle(page, text, callback)
     end)
 end
 
+local function CreateTextBox(page, text, callback)
+    local TextBoxFrame = Instance.new("Frame")
+    TextBoxFrame.Size = UDim2.new(0.95, 0, 0, 45)
+    TextBoxFrame.BackgroundColor3 = Theme.ElementBg
+    TextBoxFrame.Parent = page
+    Instance.new("UICorner", TextBoxFrame).CornerRadius = UDim.new(0, 8)
+    Instance.new("UIStroke", TextBoxFrame).Color = Color3.fromRGB(60, 60, 70)
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.5, 0, 1, 0)
+    Label.Position = UDim2.new(0, 15, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text
+    Label.Font = Enum.Font.GothamBold
+    Label.TextColor3 = Theme.Text
+    Label.TextSize = 14
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = TextBoxFrame
+
+    local TextBoxBg = Instance.new("Frame")
+    TextBoxBg.Size = UDim2.new(0.4, 0, 0.7, 0)
+    TextBoxBg.Position = UDim2.new(0.98, 0, 0.15, 0)
+    TextBoxBg.AnchorPoint = Vector2.new(1, 0)
+    TextBoxBg.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+    TextBoxBg.Parent = TextBoxFrame
+    Instance.new("UICorner", TextBoxBg).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", TextBoxBg).Color = Color3.fromRGB(60, 60, 70)
+
+    local TextBox = Instance.new("TextBox")
+    TextBox.Size = UDim2.new(1, 0, 1, 0)
+    TextBox.BackgroundTransparency = 1
+    TextBox.Text = ""
+    TextBox.PlaceholderText = "..."
+    TextBox.Font = Enum.Font.GothamBold
+    TextBox.TextColor3 = Theme.Text
+    TextBox.TextSize = 14
+    TextBox.ClearTextOnFocus = false
+    TextBox.Parent = TextBoxBg
+
+    TextBox.FocusLost:Connect(function()
+        callback(TextBox.Text)
+    end)
+end
+
 --=========================================--
 --           ФУНКЦИОНАЛ ХАБА               --
 --=========================================--
@@ -499,15 +570,23 @@ CreateButton(MM2Page, "TP to Lobby (MM2)", function()
 end)
 
 -- НАПОЛНЕНИЕ: НАСТРОЙКИ (МАСШТАБ ХАБА)
-CreateButton(SettingsPage, "UI Size: 75% (Small)", function()
-    TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 0.75}):Play()
+CreateTextBox(SettingsPage, "Custom Size (ex. 75, 1.2, 150%)", function(text)
+    -- Парсинг текста: убираем лишнее, оставляем только цифры
+    local num = text:match("[%d%.]+")
+    if num then
+        local scale = tonumber(num)
+        if scale then
+            -- Если число больше 10 (например 75, 100, 150), переводим в проценты
+            if scale >= 10 then 
+                scale = scale / 100
+            end
+            -- Ограничиваем, чтобы UI не стал микроскопическим или на весь экран
+            scale = math.clamp(scale, 0.4, 2.5) 
+            TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = scale}):Play()
+        end
+    end
 end)
-CreateButton(SettingsPage, "UI Size: 100% (Normal)", function()
+
+CreateButton(SettingsPage, "Reset Size (100%)", function()
     TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 1.0}):Play()
-end)
-CreateButton(SettingsPage, "UI Size: 125% (Large)", function()
-    TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 1.25}):Play()
-end)
-CreateButton(SettingsPage, "UI Size: 150% (Huge)", function()
-    TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 1.5}):Play()
 end)
