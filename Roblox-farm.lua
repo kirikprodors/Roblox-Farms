@@ -1,7 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v6.4 (PRO MOBILE EDITION)
-    Added: Exclusive Admin Debug Console, 2-Step Streaming Bypass for PS99
-    Fixed: Teleporting to unloaded zones in Pet Simulator 99
+    KIRIK LUXURY HUB v6.5 (PRO MOBILE EDITION)
+    Fixed: Infinite Yield on Smart TP, Restored Universal & MM2 Tabs
+    Added: Exclusive Admin Debug Console, 2-Step Streaming Bypass
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -30,7 +30,7 @@ local Theme = {
     Text = Color3.fromRGB(240, 240, 240),
     ElementBg = Color3.fromRGB(30, 30, 38),
     ElementHover = Color3.fromRGB(40, 40, 50),
-    AdminAccent = Color3.fromRGB(255, 50, 100) -- Цвет админ-панели
+    AdminAccent = Color3.fromRGB(255, 50, 100)
 }
 
 -- Создание GUI
@@ -95,7 +95,7 @@ Title.TextSize = 16
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = TopBar
 
--- КНОПКИ ЗАКРЫТИЯ И СВОРАЧИВАНИЯ
+-- КНОПКИ
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
 CloseBtn.Position = UDim2.new(1, -40, 0.5, -15)
@@ -184,7 +184,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- БОКОВАЯ ПАНЕЛЬ И КОНТЕЙНЕР
+-- БОКОВАЯ ПАНЕЛЬ
 local Sidebar = Instance.new("ScrollingFrame")
 Sidebar.Size = UDim2.new(0, 130, 1, -40)
 Sidebar.Position = UDim2.new(0, 0, 0, 40)
@@ -288,6 +288,52 @@ local function CreateButton(page, text, callback)
     Btn.MouseButton1Click:Connect(function() task.spawn(callback) end)
 end
 
+local function CreateToggle(page, text, callback)
+    local ToggleFrame = Instance.new("Frame")
+    ToggleFrame.Size = UDim2.new(0.95, 0, 0, 45)
+    ToggleFrame.BackgroundColor3 = Theme.ElementBg
+    ToggleFrame.Parent = page
+    Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 8)
+    Instance.new("UIStroke", ToggleFrame).Color = Color3.fromRGB(60, 60, 70)
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(0.7, 0, 1, 0)
+    Label.Position = UDim2.new(0, 15, 0, 0)
+    Label.BackgroundTransparency = 1
+    Label.Text = text; Label.Font = Enum.Font.GothamBold; Label.TextColor3 = Theme.Text; Label.TextSize = 14; Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = ToggleFrame
+
+    local SwitchBg = Instance.new("Frame")
+    SwitchBg.Size = UDim2.new(0, 40, 0, 20)
+    SwitchBg.Position = UDim2.new(1, -55, 0.5, -10)
+    SwitchBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    SwitchBg.Parent = ToggleFrame
+    Instance.new("UICorner", SwitchBg).CornerRadius = UDim.new(1, 0)
+
+    local SwitchKnob = Instance.new("Frame")
+    SwitchKnob.Size = UDim2.new(0, 16, 0, 16)
+    SwitchKnob.Position = UDim2.new(0, 2, 0.5, -8)
+    SwitchKnob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+    SwitchKnob.Parent = SwitchBg
+    Instance.new("UICorner", SwitchKnob).CornerRadius = UDim.new(1, 0)
+
+    local ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(1, 0, 1, 0)
+    ToggleBtn.BackgroundTransparency = 1
+    ToggleBtn.Text = ""
+    ToggleBtn.Parent = ToggleFrame
+
+    local state = false
+    ToggleBtn.MouseButton1Click:Connect(function()
+        state = not state
+        local knobPos = state and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        local bgColor = state and Theme.Accent or Color3.fromRGB(50, 50, 50)
+        TweenService:Create(SwitchKnob, TweenInfo.new(0.2), {Position = knobPos}):Play()
+        TweenService:Create(SwitchBg, TweenInfo.new(0.2), {BackgroundColor3 = bgColor}):Play()
+        task.spawn(function() callback(state) end)
+    end)
+end
+
 local function CreateTextBox(page, text, callback)
     local TextBoxFrame = Instance.new("Frame")
     TextBoxFrame.Size = UDim2.new(0.95, 0, 0, 45)
@@ -324,7 +370,7 @@ local function CreateTextBox(page, text, callback)
 end
 
 -- ========================================= --
--- ADMIN DEBUG SYSTEM (Только для тебя)
+-- ADMIN DEBUG SYSTEM (Для тебя)
 -- ========================================= --
 local DebugPage = nil
 if IsAdmin then
@@ -344,7 +390,6 @@ local function KLog(msg)
         logMsg.TextWrapped = true
         logMsg.TextXAlignment = Enum.TextXAlignment.Left
         logMsg.Parent = DebugPage
-        -- Автоскролл вниз
         DebugPage.CanvasPosition = Vector2.new(0, 999999)
     end
 end
@@ -360,67 +405,147 @@ local PS99Page = CreateTab("PS99", false)
 local MM2Page = CreateTab("MM2", false)
 local SettingsPage = CreateTab("Settings", false)
 
--- НАПОЛНЕНИЕ: PET SIMULATOR 99 (SMART TP v2 + STREAMING BYPASS)
+-- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ УНИВЕРСАЛА
+local FlySpeed = 50
+local FlyLoop, NoclipLoop, ESP_Loop
+
+local function ToggleFly(state)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if FlyLoop then FlyLoop:Disconnect() FlyLoop = nil end
+    if hrp then
+        for _, v in pairs(hrp:GetChildren()) do if v.Name == "KirikFly" then v:Destroy() end end
+    end
+    if state and char and hrp then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "KirikFly"; bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge); bv.Velocity = Vector3.zero; bv.Parent = hrp
+        FlyLoop = RunService.Heartbeat:Connect(function()
+            local cam = workspace.CurrentCamera
+            local PlayerModule = require(LocalPlayer.PlayerScripts:WaitForChild("PlayerModule"))
+            local moveVector = PlayerModule:GetControls():GetMoveVector()
+            if moveVector.Magnitude > 0 then
+                bv.Velocity = ((cam.CFrame.LookVector * -moveVector.Z) + (cam.CFrame.RightVector * moveVector.X)) * FlySpeed
+            else
+                bv.Velocity = Vector3.zero
+            end
+        end)
+    end
+end
+
+local function ToggleNoclip(state)
+    if NoclipLoop then NoclipLoop:Disconnect() NoclipLoop = nil end
+    if state then
+        NoclipLoop = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
+                end
+            end
+        end)
+    end
+end
+
+local function ToggleESP(state)
+    if ESP_Loop then ESP_Loop:Disconnect() ESP_Loop = nil end
+    if state then
+        ESP_Loop = RunService.Heartbeat:Connect(function()
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    if not p.Character:FindFirstChild("KirikESP") then
+                        local hl = Instance.new("Highlight")
+                        hl.Name = "KirikESP"; hl.FillColor = Theme.Accent; hl.OutlineColor = Color3.new(1, 1, 1); hl.FillTransparency = 0.5; hl.Parent = p.Character
+                    end
+                end
+            end
+        end)
+    else
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character and p.Character:FindFirstChild("KirikESP") then p.Character.KirikESP:Destroy() end
+        end
+    end
+end
+
+-- НАПОЛНЕНИЕ: UNIVERSAL
+CreateToggle(UniversalPage, "Mobile Fly", ToggleFly)
+CreateButton(UniversalPage, "Fly Speed: 50 (Default)", function() FlySpeed = 50 end)
+CreateButton(UniversalPage, "Fly Speed: 100 (Fast)", function() FlySpeed = 100 end)
+CreateToggle(UniversalPage, "Noclip", ToggleNoclip)
+CreateToggle(UniversalPage, "Player ESP", ToggleESP)
+
+-- НАПОЛНЕНИЕ: PET SIMULATOR 99
 CreateButton(PS99Page, "TP to Best Drop (Max Zone)", function()
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return KLog("Error: No character/HumanoidRootPart") end
+    if not hrp then return KLog("Error: No Character/HRP") end
 
     KLog("Starting Smart TP...")
 
-    -- 1. Ищем максимальную открытую зону
+    -- БЕЗОПАСНЫЙ ПОИСК ЗОНЫ БЕЗ ЗАВИСАНИЙ
     local maxZone = 0
     local success, err = pcall(function()
-        local lib = require(game:GetService("ReplicatedStorage"):WaitForChild("Library"):WaitForChild("Client"))
-        local save = lib.Save.Get()
-        for z, unlocked in pairs(save.UnlockedZones or {}) do
-            if unlocked then
-                local num = tonumber(tostring(z):match("%d+"))
-                if num and num > maxZone then maxZone = num end
+        local rs = game:GetService("ReplicatedStorage")
+        local lib = rs:FindFirstChild("Library") -- Используем FindFirstChild, чтобы не зависало!
+        if not lib then return KLog("Library folder not found") end
+        
+        local client = lib:FindFirstChild("Client")
+        if not client then return KLog("Client folder not found") end
+        
+        local saveModule = client:FindFirstChild("Save")
+        if not saveModule then return KLog("Save module not found") end
+        
+        local saveSys = require(saveModule)
+        local save = (type(saveSys) == "table" and saveSys.Get) and saveSys.Get() or nil
+        
+        if save and save.UnlockedZones then
+            for z, unlocked in pairs(save.UnlockedZones) do
+                if unlocked then
+                    local num = tonumber(tostring(z):match("%d+"))
+                    if num and num > maxZone then maxZone = num end
+                end
             end
         end
     end)
 
-    if success then
-        KLog("Max Zone Unlocked: " .. tostring(maxZone))
-    else
-        KLog("Failed to read Library. Error: " .. tostring(err))
-    end
+    if not success then KLog("Failed to read Library: " .. tostring(err)) end
+    KLog("Max Zone Detected: " .. tostring(maxZone))
 
-    -- 2. Обходим StreamingEnabled - Телепортируемся сначала к карте зоны
+    -- ЕСЛИ НАШЛИ ЗОНУ, ДЕЛАЕМ ПРЕД-ТЕЛЕПОРТ (STREAMING BYPASS)
     if maxZone > 0 then
         local mapFolder = workspace:FindFirstChild("Map")
         if mapFolder then
-            KLog("Searching for Zone " .. maxZone .. " in Map...")
+            local targetFolder = nil
             for _, folder in pairs(mapFolder:GetChildren()) do
-                local folderNum = tonumber(folder.Name:match("^%d+"))
-                if folderNum == maxZone then
-                    local targetPart = folder:FindFirstChildWhichIsA("BasePart", true)
-                    if targetPart then
-                        KLog("Found map segment. Pre-teleporting to load breakables...")
-                        hrp.CFrame = targetPart.CFrame + Vector3.new(0, 15, 0)
-                        
-                        -- ЖДЕМ ЗАГРУЗКИ ОБЪЕКТОВ (0.6 секунд)
-                        task.wait(0.6) 
-                        break
-                    end
-                end
+                local num = tonumber(folder.Name:match("^%d+"))
+                if num == maxZone then targetFolder = folder; break end
             end
-        else
-            KLog("Warning: workspace.Map not found.")
+            
+            if targetFolder then
+                local targetPart = targetFolder:FindFirstChildWhichIsA("BasePart", true)
+                if targetPart then
+                    KLog("Pre-teleporting to load Zone " .. maxZone .. "...")
+                    hrp.CFrame = targetPart.CFrame + Vector3.new(0, 15, 0)
+                    -- Ожидание, пока игра прогрузит сундуки
+                    task.wait(1.5) 
+                else
+                    KLog("No solid parts found in Zone folder.")
+                end
+            else
+                KLog("Zone folder not found in workspace.Map")
+            end
         end
     end
 
-    -- 3. Теперь ищем самую ЖИРНУЮ цель (Среди всех загруженных зон)
+    -- ПОИСК ЖИРНОЙ ЦЕЛИ
     local things = workspace:FindFirstChild("__THINGS")
     local breakables = things and things:FindFirstChild("Breakables")
     if not breakables then return KLog("Error: Breakables folder not found!") end
 
+    KLog("Scanning loaded objects...")
     local bestTarget = nil
     local maxHp = -1
 
     for _, b in pairs(breakables:GetChildren()) do
-        -- В PS99 ХП монеток записано в атрибутах. У сундуков/сейфов их больше всего.
         local hp = tonumber(b:GetAttribute("MaxHealth") or b:GetAttribute("Health") or 0)
         if hp > maxHp then
             maxHp = hp
@@ -428,13 +553,39 @@ CreateButton(PS99Page, "TP to Best Drop (Max Zone)", function()
         end
     end
 
-    -- 4. Телепорт на цель
     if bestTarget then
-        KLog("Success! Found biggest drop. MaxHealth: " .. tostring(maxHp))
+        KLog("Success! Target HP: " .. tostring(maxHp))
         local pivot = bestTarget:GetPivot()
         hrp.CFrame = CFrame.new(pivot.Position + Vector3.new(0, 8, 0))
     else
-        KLog("Error: No breakables loaded. Are you in a completely empty area?")
+        KLog("Error: Still no breakables loaded. The zone might be empty.")
+    end
+end)
+
+-- НАПОЛНЕНИЕ: MURDER MYSTERY 2
+CreateButton(MM2Page, "TP to Map (MM2)", function()
+    local mapFolder = workspace:FindFirstChild("Normal")
+    if mapFolder then
+        local map = mapFolder:FindFirstChildWhichIsA("Model")
+        if map and map:FindFirstChild("Spawns") then
+            local spawns = map.Spawns:GetChildren()
+            if #spawns > 0 then
+                local randomSpawn = spawns[math.random(1, #spawns)]
+                local char = LocalPlayer.Character
+                if char and char:FindFirstChild("HumanoidRootPart") then
+                    char.HumanoidRootPart.CFrame = randomSpawn.CFrame + Vector3.new(0, 5, 0)
+                end
+            end
+        end
+    end
+end)
+
+CreateButton(MM2Page, "TP to Lobby (MM2)", function()
+    local char = LocalPlayer.Character
+    local lobbySpawn = workspace:FindFirstChild("Lobby") and workspace.Lobby:FindFirstChild("Spawns")
+    if char and char:FindFirstChild("HumanoidRootPart") and lobbySpawn then
+        local spawns = lobbySpawn:GetChildren()
+        if #spawns > 0 then char.HumanoidRootPart.CFrame = spawns[math.random(1, #spawns)].CFrame + Vector3.new(0, 3, 0) end
     end
 end)
 
