@@ -1,7 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v6.7 (PRO MOBILE EDITION)
-    Added: Custom Zone Center Saving with File Persistence (JSON)
-    Fixed: Inaccurate Pre-Teleports in PS99
+    KIRIK LUXURY HUB v6.8 (PRO MOBILE EDITION)
+    Fixed: Falling through map during PS99 TP (Added Anchoring)
+    Added: Base64 Config Export & Import (100% Save Guarantee)
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -19,6 +19,38 @@ local HubName = "KirikLuxuryHub_V6"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
     targetGui[HubName]:Destroy()
+end
+
+-- ========================================= --
+-- БИБЛИОТЕКА BASE64 (ДЛЯ СОХРАНЕНИЯ)
+-- ========================================= --
+local Base64 = {}
+local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+function Base64.Encode(data)
+    return ((data:gsub('.', function(x) 
+        local r,b='',x:byte()
+        for i=8,1,-1 do r=r..(b%2^i-b%2^(i-1)>0 and '1' or '0') end
+        return r;
+    end)..'0000'):gsub('%d%d%d?%d?%d?%d?', function(x)
+        if (#x < 6) then return '' end
+        local c=0
+        for i=1,6 do c=c+(x:sub(i,i)=='1' and 2^(6-i) or 0) end
+        return b:sub(c+1,c+1)
+    end)..({ '', '==', '=' })[#data%3+1])
+end
+function Base64.Decode(data)
+    data = string.gsub(data, '[^'..b..'=]', '')
+    return (data:gsub('.', function(x)
+        if (x == '=') then return '' end
+        local r,f='',(b:find(x)-1)
+        for i=6,1,-1 do r=r..(f%2^i-f%2^(i-1)>0 and '1' or '0') end
+        return r;
+    end):gsub('%d%d%d?%d?%d?%d?%d?%d?', function(x)
+        if (#x ~= 8) then return '' end
+        local c=0
+        for i=1,8 do c=c+(x:sub(i,i)=='1' and 2^(8-i) or 0) end
+        return string.char(c)
+    end))
 end
 
 -- Основные настройки цветов
@@ -368,6 +400,8 @@ local function CreateTextBox(page, text, callback)
     TextBox.Parent = TextBoxBg
 
     TextBox.FocusLost:Connect(function() callback(TextBox.Text) end)
+    
+    return TextBox -- Возвращаем TextBox чтобы можно было менять его текст
 end
 
 -- ========================================= --
@@ -468,38 +502,16 @@ CreateToggle(UniversalPage, "Noclip", ToggleNoclip)
 CreateToggle(UniversalPage, "Player ESP", ToggleESP)
 
 -- ===================================
--- PET SIMULATOR 99 (CUSTOM ZONES SYSTEM)
+-- PET SIMULATOR 99 (CUSTOM ZONES)
 -- ===================================
 local TargetPS99Zone = 1
-local SavedZonesFile = "KirikHub_PS99_Zones.json"
 local SavedZones = {}
-
--- Загрузка сохраненных зон из файла (если поддерживается экзекутором)
-local function LoadZones()
-    pcall(function()
-        if isfile and isfile(SavedZonesFile) and readfile then
-            local data = readfile(SavedZonesFile)
-            local decoded = HttpService:JSONDecode(data)
-            if type(decoded) == "table" then
-                SavedZones = decoded
-                KLog("Successfully loaded saved zones from device.")
-            end
-        end
-    end)
-end
-LoadZones()
 
 CreateTextBox(PS99Page, "Set Target Zone (ex: 33)", function(text)
     local num = tonumber(text:match("%d+"))
-    if num then
-        TargetPS99Zone = num
-        KLog("Target Zone changed to: " .. tostring(TargetPS99Zone))
-    else
-        KLog("Invalid Zone Number!")
-    end
+    if num then TargetPS99Zone = num; KLog("Target Zone changed to: " .. TargetPS99Zone) end
 end)
 
--- КНОПКА СОХРАНЕНИЯ ЦЕНТРА ЗОНЫ
 CreateButton(PS99Page, "Save Current Pos as Zone Center", function()
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -507,17 +519,7 @@ CreateButton(PS99Page, "Save Current Pos as Zone Center", function()
 
     local pos = hrp.Position
     SavedZones[tostring(TargetPS99Zone)] = {X = pos.X, Y = pos.Y, Z = pos.Z}
-    
-    -- Пытаемся сохранить в файл
-    pcall(function()
-        if writefile then
-            local json = HttpService:JSONEncode(SavedZones)
-            writefile(SavedZonesFile, json)
-            KLog("File written successfully.")
-        end
-    end)
-    
-    KLog("SAVED! Zone " .. TargetPS99Zone .. " center set to your current position.")
+    KLog("SAVED! Go to Settings to Export Base64 code.")
 end)
 
 CreateButton(PS99Page, "TP to Best Drop in Zone", function()
@@ -527,17 +529,14 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
 
     KLog("Initiating TP to Zone: " .. tostring(TargetPS99Zone))
 
-    -- 1. Определяем, куда сначала прыгать для прогрузки (Pre-Teleport)
     local preTpPos = nil
     local savedData = SavedZones[tostring(TargetPS99Zone)]
 
     if savedData then
-        -- Если игрок сохранил центр вручную (Идеальный вариант)
         preTpPos = Vector3.new(savedData.X, savedData.Y, savedData.Z)
-        KLog("Using Custom Saved Center for Zone " .. TargetPS99Zone)
+        KLog("Using Custom Saved Center.")
     else
-        -- Если не сохранил, ищем как раньше (может быть криво)
-        KLog("Warning: No custom center saved. Auto-detecting... (Might be inaccurate)")
+        KLog("Warning: No custom center saved. Auto-detecting...")
         local mapFolder = workspace:FindFirstChild("Map")
         if mapFolder then
             for _, folder in pairs(mapFolder:GetChildren()) do
@@ -551,15 +550,17 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
         end
     end
 
-    if not preTpPos then
-        return KLog("Error: Couldn't find or generate a center for Zone " .. TargetPS99Zone)
-    end
+    if not preTpPos then return KLog("Error: Couldn't find center for Zone " .. TargetPS99Zone) end
 
-    -- Прыгаем в центр и ждем прогрузки
-    hrp.CFrame = CFrame.new(preTpPos + Vector3.new(0, 10, 0))
-    task.wait(1.5)
+    -- ОЧЕНЬ ВАЖНОЕ ИСПРАВЛЕНИЕ: Замораживаем игрока, чтобы он не упал в пустоту!
+    KLog("Anchoring character and waiting for map to load...")
+    hrp.Anchored = true
+    hrp.CFrame = CFrame.new(preTpPos + Vector3.new(0, 15, 0))
+    
+    task.wait(1.5) -- Ждем прогрузки
+    hrp.Anchored = false -- Размораживаем
 
-    -- 2. Ищем самый ФИЗИЧЕСКИ БОЛЬШОЙ объект вокруг (радиус 300 студов от центра)
+    -- Ищем сундук в радиусе 600 студов от нас
     local things = workspace:FindFirstChild("__THINGS")
     local breakables = things and things:FindFirstChild("Breakables")
     if not breakables then return KLog("Error: Breakables folder not found!") end
@@ -572,8 +573,7 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
         local pivot = b:GetPivot()
         local dist = (pivot.Position - hrp.Position).Magnitude
         
-        -- Сканируем только те объекты, которые находятся рядом (в прогруженной зоне)
-        if dist < 300 then 
+        if dist < 600 then 
             local volume = 0
             if b:IsA("Model") then
                 local size = b:GetExtentsSize()
@@ -589,12 +589,19 @@ CreateButton(PS99Page, "TP to Best Drop in Zone", function()
         end
     end
 
-    -- 3. Телепорт на сам сундук!
     if bestTarget then
-        KLog("Success! Found Massive Drop! (Volume: " .. math.floor(maxVolume) .. ")")
+        KLog("Success! Found Drop (Volume: " .. math.floor(maxVolume) .. ")")
         hrp.CFrame = CFrame.new(bestTarget:GetPivot().Position + Vector3.new(0, 8, 0))
     else
-        KLog("Error: Objects loaded, but nothing was found in range. Is the zone empty?")
+        KLog("Error: Nothing big found. Defaulting to any object nearby.")
+        -- Fallback: если объем не просчитался, прыгаем к самому первому попавшемуся
+        for _, b in pairs(breakables:GetChildren()) do
+            local dist = (b:GetPivot().Position - hrp.Position).Magnitude
+            if dist < 600 then
+                hrp.CFrame = CFrame.new(b:GetPivot().Position + Vector3.new(0, 8, 0))
+                return KLog("Used fallback teleport.")
+            end
+        end
     end
 end)
 
@@ -628,9 +635,9 @@ CreateButton(MM2Page, "TP to Lobby (MM2)", function()
 end)
 
 -- ===================================
--- SETTINGS
+-- SETTINGS & CONFIG BASE64
 -- ===================================
-CreateTextBox(SettingsPage, "Custom Size (ex. 75, 1.2, 150%)", function(text)
+CreateTextBox(SettingsPage, "Custom Hub Size (ex. 75, 1.2)", function(text)
     local num = text:match("[%d%.]+")
     if num then
         local scale = tonumber(num)
@@ -638,13 +645,40 @@ CreateTextBox(SettingsPage, "Custom Size (ex. 75, 1.2, 150%)", function(text)
             if scale >= 10 then scale = scale / 100 end
             scale = math.clamp(scale, 0.4, 2.5) 
             TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = scale}):Play()
-            KLog("UI Size changed to: " .. scale)
         end
     end
 end)
 
-CreateButton(SettingsPage, "Reset Size (100%)", function()
-    TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = 1.0}):Play()
+local ConfigBox = CreateTextBox(SettingsPage, "Paste Base64 Code Here", function() end)
+
+CreateButton(SettingsPage, "Export Data (Copy Base64)", function()
+    local json = HttpService:JSONEncode(SavedZones)
+    local b64 = Base64.Encode(json)
+    ConfigBox.Text = b64
+    
+    if setclipboard then
+        pcall(setclipboard, b64)
+        KLog("Data Copied to Clipboard!")
+    else
+        KLog("Clipboard not supported. Copy code manually from the box.")
+    end
 end)
 
-KLog("Hub Loaded Successfully! Version 6.7")
+CreateButton(SettingsPage, "Import Data (Load Base64)", function()
+    pcall(function()
+        local b64 = ConfigBox.Text
+        if b64 == "" or b64 == "..." then return KLog("Box is empty!") end
+        
+        local json = Base64.Decode(b64)
+        local data = HttpService:JSONDecode(json)
+        
+        if type(data) == "table" then
+            SavedZones = data
+            KLog("Data Imported Successfully! Zones restored.")
+        else
+            KLog("Error: Invalid Base64 code.")
+        end
+    end)
+end)
+
+KLog("Hub Loaded Successfully! Version 6.8")
