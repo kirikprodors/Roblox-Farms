@@ -1,8 +1,8 @@
 --[[ 
-    KIRIK LUXURY HUB v10.1 (ULTIMATE FARMING EDITION)
-    Fixed: Auto-Tracker now bypasses Emojis in PS99 leaderstats ("💎 Diamonds", "⭐ Rank")
-    Fixed: "Unknown" bug when tracking Diamonds
-    Added: Dynamic UI Titles with Emojis
+    KIRIK LUXURY HUB v11.0 (ULTIMATE FARMING EDITION)
+    Fixed: DPS Calculator Math (No more fake dropping numbers)
+    Added: Pure AI Auto-Detect (Instantly detects what you are currently looting)
+    Removed: Flaky Leaderstats scanning (Now directly reads PS99 Memory)
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -17,7 +17,7 @@ local LocalPlayer = Players.LocalPlayer
 local IsAdmin = (LocalPlayer.UserId == 5463685844) -- Твой ID
 
 -- Защита от дубликатов
-local HubName = "KirikLuxuryHub_V10_1"
+local HubName = "KirikLuxuryHub_V11"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
     targetGui[HubName]:Destroy()
@@ -31,8 +31,8 @@ local Config = {
     FlySpeed = 50,
     UIScale = 1.0,
     SavedZones = {},
-    TrackMode = "Diamonds", -- Режимы: AutoBest, AutoSecondary, Diamonds, Custom
-    CustomStat = ""
+    TrackMode = "Auto", -- "Auto" или "Custom"
+    CustomStat = "Diamonds"
 }
 
 -- БИБЛИОТЕКА BASE64
@@ -331,13 +331,15 @@ local FlySpeedInput = CreateTextBox(UniversalPage, "Fly Speed", tostring(Config.
 end)
 
 -- ===================================
--- PET SIMULATOR 99 (SMART TRACKER)
+-- PET SIMULATOR 99 (AI TRACKER)
 -- ===================================
 
+-- ЗАРАНЕЕ ЗАГРУЖАЕМ ВНУТРЕННОСТИ ИГРЫ
 local PS99SaveModule = nil
 task.spawn(function()
     pcall(function()
         PS99SaveModule = require(game:GetService("ReplicatedStorage"):WaitForChild("Library"):WaitForChild("Client"):WaitForChild("Save"))
+        KLog("PS99 Internal Save Loaded!")
     end)
 end)
 
@@ -385,18 +387,6 @@ UserInputService.InputChanged:Connect(function(i)
     end
 end)
 
-local suffixes = {k = 1e3, m = 1e6, b = 1e9, t = 1e12, q = 1e15, qi = 1e18}
-local function ParseStat(str)
-    str = string.lower(string.gsub(tostring(str), ",", ""))
-    local num, suffix = string.match(str, "([%d%.]+)([a-z]*)")
-    if num then
-        local val = tonumber(num)
-        if suffix and suffixes[suffix] then val = val * suffixes[suffix] end
-        return val or 0
-    end
-    return 0
-end
-
 local function FormatStat(val)
     if val == nil or type(val) ~= "number" then return "0" end
     if val >= 1e18 then return string.format("%.2fqi", val / 1e18)
@@ -408,130 +398,106 @@ local function FormatStat(val)
     else return tostring(math.floor(val)) end
 end
 
--- Умный читатель памяти PS99 (обход эмодзи)
-local function GetSafeStatValue(targetName)
-    local val = 0
-    local targetLower = string.lower(targetName)
-    
-    pcall(function()
-        local ls = LocalPlayer:FindFirstChild("leaderstats")
-        if ls then
-            for _, stat in pairs(ls:GetChildren()) do
-                if string.find(string.lower(stat.Name), targetLower) then
-                    val = ParseStat(stat.Value)
-                    return
-                end
-            end
-        end
-    end)
-    if val > 0 then return val end
-    
-    pcall(function()
-        if PS99SaveModule then
-            local data = PS99SaveModule.Get()
-            if data and data.Inventory and data.Inventory.Currency then
-                for id, cur in pairs(data.Inventory.Currency) do
-                    if string.find(string.lower(tostring(cur.id or id)), targetLower) then
-                        val = cur._am or 0
-                        return
-                    end
-                end
-            end
-        end
-    end)
-    
-    return val
-end
-
-local TrackerLoop
+-- ИСХОДНАЯ ЛОГИКА ТРЕКЕРА
+local TrackerThread
 local StatHistory = {}
-local LastTrackedName = ""
+local AutoDetectedID = "Diamonds"
+local LastInventorySnap = {}
 
--- ВКЛЮЧЕНИЕ HUD
 CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
     TrackerHUD.Visible = state
     if state then
         StatHistory = {}
-        LastTrackedName = ""
-        TrackerLoop = RunService.Heartbeat:Connect(function()
-            local currentName = "Waiting..."
-            local currentVal = 0
-
-            local ls = LocalPlayer:FindFirstChild("leaderstats")
-            
-            -- ИЩЕМ ЛУЧШУЮ ИЛИ ВТОРУЮ ВАЛЮТУ (ИГНОРИРУЕМ РАНК И АЛМАЗЫ)
-            if Config.TrackMode == "AutoBest" or Config.TrackMode == "AutoSecondary" then
-                if ls then
-                    local valid = {}
-                    for _, v in ipairs(ls:GetChildren()) do
-                        local n = string.lower(v.Name)
-                        -- Игнорируем эмодзи и ищем корень слова
-                        if not string.find(n, "rank") and not string.find(n, "diamond") then
-                            table.insert(valid, v)
-                        end
-                    end
-                    
-                    local targetObj = Config.TrackMode == "AutoBest" and valid[1] or (valid[2] or valid[1])
-                    if targetObj then
-                        currentName = targetObj.Name
-                        currentVal = ParseStat(targetObj.Value)
-                    end
-                end
-            else
-                -- РУЧНОЙ ПОИСК (АЛМАЗЫ ИЛИ СВОЕ ИМЯ)
-                local searchFor = Config.TrackMode == "Diamonds" and "diamond" or Config.CustomStat
-                if ls then
-                    for _, v in ipairs(ls:GetChildren()) do
-                        if string.find(string.lower(v.Name), string.lower(searchFor)) then
-                            currentName = v.Name
-                            break
+        LastInventorySnap = {}
+        
+        TrackerThread = task.spawn(function()
+            while task.wait(1) do -- ОБНОВЛЕНИЕ РАЗ В СЕКУНДУ (ЧТОБЫ НЕ ЛАГАЛО)
+                if not PS99SaveModule then continue end
+                
+                local save = PS99SaveModule.Get()
+                if not save or not save.Inventory or not save.Inventory.Currency then continue end
+                
+                local currentInv = save.Inventory.Currency
+                local activeID = Config.TrackMode == "Custom" and Config.CustomStat or AutoDetectedID
+                
+                -- AI AUTO-DETECT (Ищет валюту, которая только что увеличилась)
+                if Config.TrackMode == "Auto" then
+                    for id, curData in pairs(currentInv) do
+                        local name = tostring(curData.id or id)
+                        local amount = curData._am or 0
+                        local oldAmount = LastInventorySnap[name] or 0
+                        
+                        if amount > oldAmount then
+                            if name ~= "Diamonds" or AutoDetectedID == "Diamonds" then
+                                activeID = name
+                                AutoDetectedID = name
+                            end
                         end
                     end
                 end
-                if currentName == "Waiting..." then currentName = Config.TrackMode == "Diamonds" and "Diamonds" or Config.CustomStat end
-                currentVal = GetSafeStatValue(searchFor)
-            end
+                
+                -- Сохраняем слепок инвентаря для сравнения
+                for id, curData in pairs(currentInv) do
+                    LastInventorySnap[tostring(curData.id or id)] = curData._am or 0
+                end
+                
+                -- ПОЛУЧАЕМ КОЛИЧЕСТВО АКТИВНОЙ ВАЛЮТЫ
+                local currentVal = 0
+                for id, curData in pairs(currentInv) do
+                    if string.lower(tostring(curData.id or id)) == string.lower(activeID) then
+                        currentVal = curData._am or 0
+                        break
+                    end
+                end
+                
+                -- ОБНОВЛЯЕМ НАЗВАНИЕ В HUD
+                HUDTitle.Text = "📈 " .. string.upper(activeID) .. " SPEED"
+                
+                -- ЗАПИСЬ ИСТОРИИ И МАТЕМАТИКА DPS
+                local now = tick()
+                
+                -- Если сменили валюту - сбрасываем историю
+                if activeID ~= AutoDetectedID and Config.TrackMode == "Custom" then
+                    StatHistory = {}
+                    AutoDetectedID = activeID
+                end
 
-            -- АВТО-ОБНОВЛЕНИЕ ТЕКСТА В HUD (с эмодзи!)
-            if currentName ~= LastTrackedName and currentName ~= "Waiting..." then
-                LastTrackedName = currentName
-                StatHistory = {}
-                HUDTitle.Text = "📈 " .. string.upper(currentName)
-                KLog("Auto-Switched to: " .. currentName)
-            end
-
-            local now = tick()
-            if #StatHistory == 0 or now - StatHistory[#StatHistory].Time >= 1 then
                 table.insert(StatHistory, {Time = now, Value = currentVal})
-            end
-
-            while #StatHistory > 0 and (now - StatHistory[1].Time) > 60 do table.remove(StatHistory, 1) end
-
-            if #StatHistory > 0 then
-                local gained = currentVal - StatHistory[1].Value
-                if gained < 0 then gained = 0; StatHistory = {} end 
                 
-                local timePassed = math.max(1, now - StatHistory[1].Time)
-                local speedPerSec = gained / timePassed
+                -- Храним только последнюю минуту
+                while #StatHistory > 0 and (now - StatHistory[1].Time) > 60 do table.remove(StatHistory, 1) end
                 
-                LblCurrent.Text = currentName .. ": " .. FormatStat(currentVal)
-                Lbl10s.Text = "Per 10s: " .. FormatStat(speedPerSec * 10)
-                LblMin.Text = "Per Min: " .. FormatStat(speedPerSec * 60)
-                Lbl10m.Text = "Per 10m: " .. FormatStat(speedPerSec * 600)
-                Lbl30m.Text = "Per 30m: " .. FormatStat(speedPerSec * 1800)
-                LblHour.Text = "Per Hour: " .. FormatStat(speedPerSec * 3600)
+                if #StatHistory > 1 then
+                    local gained = currentVal - StatHistory[1].Value
+                    if gained < 0 then gained = 0; StatHistory = {{Time = now, Value = currentVal}} end 
+                    
+                    local timePassed = now - StatHistory[1].Time
+                    if timePassed <= 0 then timePassed = 1 end
+                    
+                    local speedPerSec = gained / timePassed
+                    
+                    LblCurrent.Text = activeID .. ": " .. FormatStat(currentVal)
+                    Lbl10s.Text = "Per 10s: " .. FormatStat(speedPerSec * 10)
+                    LblMin.Text = "Per Min: " .. FormatStat(speedPerSec * 60)
+                    Lbl10m.Text = "Per 10m: " .. FormatStat(speedPerSec * 600)
+                    Lbl30m.Text = "Per 30m: " .. FormatStat(speedPerSec * 1800)
+                    LblHour.Text = "Per Hour: " .. FormatStat(speedPerSec * 3600)
+                else
+                    LblCurrent.Text = activeID .. ": " .. FormatStat(currentVal)
+                    Lbl10s.Text = "Per 10s: 0"; LblMin.Text = "Per Min: 0"
+                    Lbl10m.Text = "Per 10m: 0"; Lbl30m.Text = "Per 30m: 0"; LblHour.Text = "Per Hour: 0"
+                end
             end
         end)
     else
-        if TrackerLoop then TrackerLoop:Disconnect() TrackerLoop = nil end
+        if TrackerThread then task.cancel(TrackerThread); TrackerThread = nil end
     end
 end)
 
--- КНОПКИ ВЫБОРА ВАЛЮТЫ (Умные режимы)
-CreateButton(PS99Page, "Track: Best Zone Coin (AUTO)", function() Config.TrackMode = "AutoBest"; KLog("Mode: Auto Best") end)
-CreateButton(PS99Page, "Track: Secondary Coin (AUTO)", function() Config.TrackMode = "AutoSecondary"; KLog("Mode: Auto Secondary") end)
-CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackMode = "Diamonds"; KLog("Mode: Diamonds") end)
-CreateTextBox(PS99Page, "Custom Currency Name", "ex: Void", function(text)
+-- КНОПКИ ВЫБОРА ВАЛЮТЫ (AI РЕЖИМ)
+CreateButton(PS99Page, "Track: SMART AUTO-DETECT", function() Config.TrackMode = "Auto"; KLog("Mode: AI Auto-Detect (Hit any coin to lock!)") end)
+CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackMode = "Custom"; Config.CustomStat = "Diamonds"; KLog("Mode: Fixed Diamonds") end)
+CreateTextBox(PS99Page, "Custom Currency Name", "ex: Void Coins", function(text)
     if text ~= "" then Config.TrackMode = "Custom"; Config.CustomStat = text; KLog("Mode: Custom ("..text..")") end
 end)
 
@@ -647,7 +613,6 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
         if type(data) == "table" then
             Config = data
             ZoneInputBox.Text = tostring(Config.TargetPS99Zone or 1)
-            FlySpeedInput.Text = tostring(Config.FlySpeed or 50)
             local scale = Config.UIScale or 1.0; SizeInputBox.Text = tostring(scale)
             TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = scale}):Play()
             KLog("Config Loaded!")
@@ -655,4 +620,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V10.1 (Emoji Fixed & Auto HUD)")
+KLog("Hub Loaded! V11.0 Ultimate (AI Tracker)")
