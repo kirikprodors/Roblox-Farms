@@ -1,7 +1,8 @@
 --[[ 
-    KIRIK LUXURY HUB v10.0 (FINAL SMART EDITION)
-    Added: AI Auto-Detect for Best/Secondary Currencies (Handles Gold Bars, Platinum, etc.)
-    Fixed: Dynamic Name Updating in HUD
+    KIRIK LUXURY HUB v10.1 (ULTIMATE FARMING EDITION)
+    Fixed: Auto-Tracker now bypasses Emojis in PS99 leaderstats ("💎 Diamonds", "⭐ Rank")
+    Fixed: "Unknown" bug when tracking Diamonds
+    Added: Dynamic UI Titles with Emojis
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -16,7 +17,7 @@ local LocalPlayer = Players.LocalPlayer
 local IsAdmin = (LocalPlayer.UserId == 5463685844) -- Твой ID
 
 -- Защита от дубликатов
-local HubName = "KirikLuxuryHub_V10"
+local HubName = "KirikLuxuryHub_V10_1"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
     targetGui[HubName]:Destroy()
@@ -170,7 +171,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- БОКОВАЯ ПАНЕЛЬ
+-- БОКОВАЯ ПАНЕЛЬ И КОНТЕЙНЕР
 local Sidebar = Instance.new("ScrollingFrame", MainFrame)
 Sidebar.Size = UDim2.new(0, 130, 1, -40); Sidebar.Position = UDim2.new(0, 0, 0, 40); Sidebar.BackgroundColor3 = Theme.Sidebar; Sidebar.BorderSizePixel = 0; Sidebar.ScrollBarThickness = 0; Sidebar.Active = true
 Instance.new("UIListLayout", Sidebar).SortOrder = Enum.SortOrder.LayoutOrder
@@ -333,6 +334,14 @@ end)
 -- PET SIMULATOR 99 (SMART TRACKER)
 -- ===================================
 
+local PS99SaveModule = nil
+task.spawn(function()
+    pcall(function()
+        PS99SaveModule = require(game:GetService("ReplicatedStorage"):WaitForChild("Library"):WaitForChild("Client"):WaitForChild("Save"))
+    end)
+end)
+
+-- Создаем UI Трекера
 local TrackerHUD = Instance.new("Frame", ScreenGui)
 TrackerHUD.Size = UDim2.new(0, 180, 0, 145); TrackerHUD.Position = UDim2.new(0.8, -180, 0.2, 0)
 TrackerHUD.BackgroundColor3 = Theme.ElementBg; TrackerHUD.Visible = false
@@ -399,63 +408,105 @@ local function FormatStat(val)
     else return tostring(math.floor(val)) end
 end
 
--- АВТО-ДЕТЕКТ ВАЛЮТ
+-- Умный читатель памяти PS99 (обход эмодзи)
+local function GetSafeStatValue(targetName)
+    local val = 0
+    local targetLower = string.lower(targetName)
+    
+    pcall(function()
+        local ls = LocalPlayer:FindFirstChild("leaderstats")
+        if ls then
+            for _, stat in pairs(ls:GetChildren()) do
+                if string.find(string.lower(stat.Name), targetLower) then
+                    val = ParseStat(stat.Value)
+                    return
+                end
+            end
+        end
+    end)
+    if val > 0 then return val end
+    
+    pcall(function()
+        if PS99SaveModule then
+            local data = PS99SaveModule.Get()
+            if data and data.Inventory and data.Inventory.Currency then
+                for id, cur in pairs(data.Inventory.Currency) do
+                    if string.find(string.lower(tostring(cur.id or id)), targetLower) then
+                        val = cur._am or 0
+                        return
+                    end
+                end
+            end
+        end
+    end)
+    
+    return val
+end
+
 local TrackerLoop
 local StatHistory = {}
 local LastTrackedName = ""
 
+-- ВКЛЮЧЕНИЕ HUD
 CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
     TrackerHUD.Visible = state
     if state then
         StatHistory = {}
         LastTrackedName = ""
         TrackerLoop = RunService.Heartbeat:Connect(function()
+            local currentName = "Waiting..."
+            local currentVal = 0
+
             local ls = LocalPlayer:FindFirstChild("leaderstats")
-            if not ls then return end
-
-            local targetObj = nil
-
-            -- ОПРЕДЕЛЯЕМ ЦЕЛЬ
-            if Config.TrackMode == "AutoBest" then
-                local valid = {}
-                for _, v in ipairs(ls:GetChildren()) do
-                    if v.Name ~= "Rank" and v.Name ~= "Diamonds" then table.insert(valid, v) end
+            
+            -- ИЩЕМ ЛУЧШУЮ ИЛИ ВТОРУЮ ВАЛЮТУ (ИГНОРИРУЕМ РАНК И АЛМАЗЫ)
+            if Config.TrackMode == "AutoBest" or Config.TrackMode == "AutoSecondary" then
+                if ls then
+                    local valid = {}
+                    for _, v in ipairs(ls:GetChildren()) do
+                        local n = string.lower(v.Name)
+                        -- Игнорируем эмодзи и ищем корень слова
+                        if not string.find(n, "rank") and not string.find(n, "diamond") then
+                            table.insert(valid, v)
+                        end
+                    end
+                    
+                    local targetObj = Config.TrackMode == "AutoBest" and valid[1] or (valid[2] or valid[1])
+                    if targetObj then
+                        currentName = targetObj.Name
+                        currentVal = ParseStat(targetObj.Value)
+                    end
                 end
-                targetObj = valid[1] -- Самая топовая зональная валюта
-            elseif Config.TrackMode == "AutoSecondary" then
-                local valid = {}
-                for _, v in ipairs(ls:GetChildren()) do
-                    if v.Name ~= "Rank" and v.Name ~= "Diamonds" then table.insert(valid, v) end
+            else
+                -- РУЧНОЙ ПОИСК (АЛМАЗЫ ИЛИ СВОЕ ИМЯ)
+                local searchFor = Config.TrackMode == "Diamonds" and "diamond" or Config.CustomStat
+                if ls then
+                    for _, v in ipairs(ls:GetChildren()) do
+                        if string.find(string.lower(v.Name), string.lower(searchFor)) then
+                            currentName = v.Name
+                            break
+                        end
+                    end
                 end
-                targetObj = valid[2] or valid[1] -- Второстепенная (если есть)
-            elseif Config.TrackMode == "Diamonds" then
-                targetObj = ls:FindFirstChild("Diamonds")
-            elseif Config.TrackMode == "Custom" then
-                targetObj = ls:FindFirstChild(Config.CustomStat)
+                if currentName == "Waiting..." then currentName = Config.TrackMode == "Diamonds" and "Diamonds" or Config.CustomStat end
+                currentVal = GetSafeStatValue(searchFor)
             end
 
-            local currentName = targetObj and targetObj.Name or "Unknown"
-            local currentVal = targetObj and ParseStat(targetObj.Value) or 0
-
-            -- ЕСЛИ ВАЛЮТА ИЗМЕНИЛАСЬ (напр. С Монет на Золотые слитки) -> СБРАСЫВАЕМ ИСТОРИЮ
-            if currentName ~= LastTrackedName then
+            -- АВТО-ОБНОВЛЕНИЕ ТЕКСТА В HUD (с эмодзи!)
+            if currentName ~= LastTrackedName and currentName ~= "Waiting..." then
                 LastTrackedName = currentName
                 StatHistory = {}
                 HUDTitle.Text = "📈 " .. string.upper(currentName)
-                KLog("Tracker auto-switched to: " .. currentName)
+                KLog("Auto-Switched to: " .. currentName)
             end
 
-            -- СОБИРАЕМ ИСТОРИЮ ЗА МИНУТУ
             local now = tick()
             if #StatHistory == 0 or now - StatHistory[#StatHistory].Time >= 1 then
                 table.insert(StatHistory, {Time = now, Value = currentVal})
             end
 
-            while #StatHistory > 0 and (now - StatHistory[1].Time) > 60 do
-                table.remove(StatHistory, 1)
-            end
+            while #StatHistory > 0 and (now - StatHistory[1].Time) > 60 do table.remove(StatHistory, 1) end
 
-            -- СЧИТАЕМ
             if #StatHistory > 0 then
                 local gained = currentVal - StatHistory[1].Value
                 if gained < 0 then gained = 0; StatHistory = {} end 
@@ -476,10 +527,11 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
     end
 end)
 
+-- КНОПКИ ВЫБОРА ВАЛЮТЫ (Умные режимы)
 CreateButton(PS99Page, "Track: Best Zone Coin (AUTO)", function() Config.TrackMode = "AutoBest"; KLog("Mode: Auto Best") end)
 CreateButton(PS99Page, "Track: Secondary Coin (AUTO)", function() Config.TrackMode = "AutoSecondary"; KLog("Mode: Auto Secondary") end)
 CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackMode = "Diamonds"; KLog("Mode: Diamonds") end)
-CreateTextBox(PS99Page, "Custom Currency Name", "ex: Hacker Coins", function(text)
+CreateTextBox(PS99Page, "Custom Currency Name", "ex: Void", function(text)
     if text ~= "" then Config.TrackMode = "Custom"; Config.CustomStat = text; KLog("Mode: Custom ("..text..")") end
 end)
 
@@ -603,4 +655,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V10.0 (Ultimate Auto Tracker)")
+KLog("Hub Loaded! V10.1 (Emoji Fixed & Auto HUD)")
