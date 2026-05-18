@@ -1,7 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v9.1 (ULTIMATE FARMING EDITION)
-    Fixed: "Label" text bug (Heartbeat Yield Error resolved)
-    Added: Asynchronous PS99 Save Module Hook (Zero lag tracking)
+    KIRIK LUXURY HUB v9.2 (ULTIMATE FARMING EDITION)
+    Fixed: "Bal" changed to dynamic currency names in the Speed Tracker HUD
+    Maintains: No-Lag tracking, Smart TP, Base64 Config
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -30,7 +30,7 @@ local Config = {
     FlySpeed = 50,
     UIScale = 1.0,
     SavedZones = {},
-    TrackedStat = "Diamonds"
+    TrackedStat = "Diamonds" -- По умолчанию стоят Алмазы
 }
 
 -- БИБЛИОТЕКА BASE64
@@ -272,7 +272,7 @@ local function KLog(msg)
         DebugPage.CanvasPosition = Vector2.new(0, 999999)
     end
 end
-if IsAdmin then KLog("Welcome to Admin Mode!") end
+if IsAdmin then KLog("Welcome to Admin Mode, Creator!") end
 
 --=========================================--
 --           СТРАНИЦЫ И ФУНКЦИОНАЛ         --
@@ -332,7 +332,7 @@ end)
 -- PET SIMULATOR 99 (HUD + TP)
 -- ===================================
 
--- ЗАРАНЕЕ ЗАГРУЖАЕМ ВНУТРЕННОСТИ ИГРЫ (Чтоб не зависало)
+-- ЗАРАНЕЕ ЗАГРУЖАЕМ ВНУТРЕННОСТИ ИГРЫ
 local PS99SaveModule = nil
 task.spawn(function()
     pcall(function()
@@ -350,11 +350,11 @@ Instance.new("UIStroke", TrackerHUD).Color = Theme.Accent
 
 local HUDTitle = Instance.new("TextLabel", TrackerHUD)
 HUDTitle.Size = UDim2.new(1, 0, 0, 25); HUDTitle.BackgroundTransparency = 1
-HUDTitle.Text = "📈 SPEED TRACKER"; HUDTitle.Font = Enum.Font.GothamBold; HUDTitle.TextColor3 = Theme.Accent; HUDTitle.TextSize = 12
+HUDTitle.Text = "📈 DIAMONDS SPEED"; HUDTitle.Font = Enum.Font.GothamBold; HUDTitle.TextColor3 = Theme.Accent; HUDTitle.TextSize = 12
 
--- СРАЗУ ЗАДАЕМ ТЕКСТЫ (Чтобы никогда не было "Label")
+-- НАДПИСИ (Динамически меняются)
 local LblCurrent = Instance.new("TextLabel", TrackerHUD)
-LblCurrent.Size = UDim2.new(1, -10, 0, 20); LblCurrent.Position = UDim2.new(0, 10, 0, 25); LblCurrent.BackgroundTransparency = 1; LblCurrent.TextXAlignment = Enum.TextXAlignment.Left; LblCurrent.TextColor3 = Theme.Text; LblCurrent.Font = Enum.Font.GothamBold; LblCurrent.TextSize = 12; LblCurrent.Text = "Bal: 0"
+LblCurrent.Size = UDim2.new(1, -10, 0, 20); LblCurrent.Position = UDim2.new(0, 10, 0, 25); LblCurrent.BackgroundTransparency = 1; LblCurrent.TextXAlignment = Enum.TextXAlignment.Left; LblCurrent.TextColor3 = Theme.Text; LblCurrent.Font = Enum.Font.GothamBold; LblCurrent.TextSize = 12; LblCurrent.Text = Config.TrackedStat .. ": 0"
 
 local Lbl10s = Instance.new("TextLabel", TrackerHUD)
 Lbl10s.Size = UDim2.new(1, -10, 0, 20); Lbl10s.Position = UDim2.new(0, 10, 0, 45); Lbl10s.BackgroundTransparency = 1; Lbl10s.TextXAlignment = Enum.TextXAlignment.Left; Lbl10s.TextColor3 = Color3.fromRGB(200, 200, 200); Lbl10s.Font = Enum.Font.GothamBold; Lbl10s.TextSize = 12; Lbl10s.Text = "Per 10s: 0"
@@ -409,12 +409,11 @@ local function FormatStat(val)
     else return tostring(math.floor(val)) end
 end
 
--- УМНЫЙ ЧТАТЕЛЬ БАЛАНСА (БЕЗ ЗАВИСАНИЙ)
+-- УМНЫЙ ЧТАТЕЛЬ БАЛАНСА
 local function GetSafeStatValue(targetName)
     local val = 0
     local targetLower = string.lower(targetName)
     
-    -- Пробуем найти в Leaderstats
     pcall(function()
         local ls = LocalPlayer:FindFirstChild("leaderstats")
         if ls then
@@ -428,7 +427,6 @@ local function GetSafeStatValue(targetName)
     end)
     if val > 0 then return val end
     
-    -- Пробуем найти через внутренности игры
     pcall(function()
         if PS99SaveModule then
             local data = PS99SaveModule.Get()
@@ -474,7 +472,7 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
                 local timePassed = math.max(1, now - StatHistory[1].Time)
                 local speedPerSec = gained / timePassed
                 
-                LblCurrent.Text = "Bal: " .. FormatStat(currentVal)
+                LblCurrent.Text = Config.TrackedStat .. ": " .. FormatStat(currentVal)
                 Lbl10s.Text = "Per 10s: " .. FormatStat(speedPerSec * 10)
                 LblMin.Text = "Per Min: " .. FormatStat(speedPerSec * 60)
                 Lbl10m.Text = "Per 10m: " .. FormatStat(speedPerSec * 600)
@@ -488,12 +486,12 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
 end)
 
 -- КНОПКИ ВЫБОРА ВАЛЮТЫ
-CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackedStat = "Diamonds"; StatHistory = {}; HUDTitle.Text = "💎 DIAMONDS SPEED" end)
-CreateButton(PS99Page, "Track: Coins", function() Config.TrackedStat = "Coins"; StatHistory = {}; HUDTitle.Text = "🪙 COINS SPEED" end)
-CreateButton(PS99Page, "Track: Void Coins", function() Config.TrackedStat = "Void"; StatHistory = {}; HUDTitle.Text = "🌌 VOID COINS SPEED" end)
+CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackedStat = "Diamonds"; StatHistory = {}; HUDTitle.Text = "💎 DIAMONDS SPEED"; LblCurrent.Text = "Diamonds: 0" end)
+CreateButton(PS99Page, "Track: Coins", function() Config.TrackedStat = "Coins"; StatHistory = {}; HUDTitle.Text = "🪙 COINS SPEED"; LblCurrent.Text = "Coins: 0" end)
+CreateButton(PS99Page, "Track: Void Coins", function() Config.TrackedStat = "Void"; StatHistory = {}; HUDTitle.Text = "🌌 VOID COINS SPEED"; LblCurrent.Text = "Void Coins: 0" end)
 
 local TrackNameInput = CreateTextBox(PS99Page, "Custom Currency Name", "ex: Tech Coins", function(text)
-    if text ~= "" then Config.TrackedStat = text; StatHistory = {}; HUDTitle.Text = "📈 " .. string.upper(text) .. " SPEED" end
+    if text ~= "" then Config.TrackedStat = text; StatHistory = {}; HUDTitle.Text = "📈 " .. string.upper(text) .. " SPEED"; LblCurrent.Text = text .. ": 0" end
 end)
 
 -- ТЕЛЕПОРТЫ
@@ -616,4 +614,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V9.1 (No Lag Tracker)")
+KLog("Hub Loaded! V9.2 Ultimate (Dynamic Text Fixed)")
