@@ -1,7 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v9.0 (ULTIMATE FARMING EDITION)
-    Added: Advanced PS99 DPS/Speed Tracker (10s, 1m, 10m, 30m, 1h projections)
-    Added: PS99 Internal Currency Bypass (Reads hidden coins)
+    KIRIK LUXURY HUB v9.1 (ULTIMATE FARMING EDITION)
+    Fixed: "Label" text bug (Heartbeat Yield Error resolved)
+    Added: Asynchronous PS99 Save Module Hook (Zero lag tracking)
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -272,7 +272,7 @@ local function KLog(msg)
         DebugPage.CanvasPosition = Vector2.new(0, 999999)
     end
 end
-if IsAdmin then KLog("Welcome to Admin Mode, Creator!") end
+if IsAdmin then KLog("Welcome to Admin Mode!") end
 
 --=========================================--
 --           СТРАНИЦЫ И ФУНКЦИОНАЛ         --
@@ -294,10 +294,8 @@ CreateToggle(UniversalPage, "Anti-AFK", function(state)
             VirtualUser:ClickButton2(Vector2.new())
             KLog("Anti-AFK: Kept you in game.")
         end)
-        KLog("Anti-AFK Enabled")
     else
         if AntiAfkConnection then AntiAfkConnection:Disconnect(); AntiAfkConnection = nil end
-        KLog("Anti-AFK Disabled")
     end
 end)
 
@@ -334,6 +332,15 @@ end)
 -- PET SIMULATOR 99 (HUD + TP)
 -- ===================================
 
+-- ЗАРАНЕЕ ЗАГРУЖАЕМ ВНУТРЕННОСТИ ИГРЫ (Чтоб не зависало)
+local PS99SaveModule = nil
+task.spawn(function()
+    pcall(function()
+        PS99SaveModule = require(game:GetService("ReplicatedStorage"):WaitForChild("Library"):WaitForChild("Client"):WaitForChild("Save"))
+        KLog("PS99 Internal Save Loaded!")
+    end)
+end)
+
 -- Создаем UI Трекера
 local TrackerHUD = Instance.new("Frame", ScreenGui)
 TrackerHUD.Size = UDim2.new(0, 180, 0, 145); TrackerHUD.Position = UDim2.new(0.8, -180, 0.2, 0)
@@ -345,23 +352,24 @@ local HUDTitle = Instance.new("TextLabel", TrackerHUD)
 HUDTitle.Size = UDim2.new(1, 0, 0, 25); HUDTitle.BackgroundTransparency = 1
 HUDTitle.Text = "📈 SPEED TRACKER"; HUDTitle.Font = Enum.Font.GothamBold; HUDTitle.TextColor3 = Theme.Accent; HUDTitle.TextSize = 12
 
+-- СРАЗУ ЗАДАЕМ ТЕКСТЫ (Чтобы никогда не было "Label")
 local LblCurrent = Instance.new("TextLabel", TrackerHUD)
-LblCurrent.Size = UDim2.new(1, -10, 0, 20); LblCurrent.Position = UDim2.new(0, 10, 0, 25); LblCurrent.BackgroundTransparency = 1; LblCurrent.TextXAlignment = Enum.TextXAlignment.Left; LblCurrent.TextColor3 = Theme.Text; LblCurrent.Font = Enum.Font.GothamBold; LblCurrent.TextSize = 12
+LblCurrent.Size = UDim2.new(1, -10, 0, 20); LblCurrent.Position = UDim2.new(0, 10, 0, 25); LblCurrent.BackgroundTransparency = 1; LblCurrent.TextXAlignment = Enum.TextXAlignment.Left; LblCurrent.TextColor3 = Theme.Text; LblCurrent.Font = Enum.Font.GothamBold; LblCurrent.TextSize = 12; LblCurrent.Text = "Bal: 0"
 
 local Lbl10s = Instance.new("TextLabel", TrackerHUD)
-Lbl10s.Size = UDim2.new(1, -10, 0, 20); Lbl10s.Position = UDim2.new(0, 10, 0, 45); Lbl10s.BackgroundTransparency = 1; Lbl10s.TextXAlignment = Enum.TextXAlignment.Left; Lbl10s.TextColor3 = Color3.fromRGB(200, 200, 200); Lbl10s.Font = Enum.Font.GothamBold; Lbl10s.TextSize = 12
+Lbl10s.Size = UDim2.new(1, -10, 0, 20); Lbl10s.Position = UDim2.new(0, 10, 0, 45); Lbl10s.BackgroundTransparency = 1; Lbl10s.TextXAlignment = Enum.TextXAlignment.Left; Lbl10s.TextColor3 = Color3.fromRGB(200, 200, 200); Lbl10s.Font = Enum.Font.GothamBold; Lbl10s.TextSize = 12; Lbl10s.Text = "Per 10s: 0"
 
 local LblMin = Instance.new("TextLabel", TrackerHUD)
-LblMin.Size = UDim2.new(1, -10, 0, 20); LblMin.Position = UDim2.new(0, 10, 0, 65); LblMin.BackgroundTransparency = 1; LblMin.TextXAlignment = Enum.TextXAlignment.Left; LblMin.TextColor3 = Color3.fromRGB(150, 255, 150); LblMin.Font = Enum.Font.GothamBold; LblMin.TextSize = 12
+LblMin.Size = UDim2.new(1, -10, 0, 20); LblMin.Position = UDim2.new(0, 10, 0, 65); LblMin.BackgroundTransparency = 1; LblMin.TextXAlignment = Enum.TextXAlignment.Left; LblMin.TextColor3 = Color3.fromRGB(150, 255, 150); LblMin.Font = Enum.Font.GothamBold; LblMin.TextSize = 12; LblMin.Text = "Per Min: 0"
 
 local Lbl10m = Instance.new("TextLabel", TrackerHUD)
-Lbl10m.Size = UDim2.new(1, -10, 0, 20); Lbl10m.Position = UDim2.new(0, 10, 0, 85); Lbl10m.BackgroundTransparency = 1; Lbl10m.TextXAlignment = Enum.TextXAlignment.Left; Lbl10m.TextColor3 = Color3.fromRGB(50, 255, 100); Lbl10m.Font = Enum.Font.GothamBold; Lbl10m.TextSize = 12
+Lbl10m.Size = UDim2.new(1, -10, 0, 20); Lbl10m.Position = UDim2.new(0, 10, 0, 85); Lbl10m.BackgroundTransparency = 1; Lbl10m.TextXAlignment = Enum.TextXAlignment.Left; Lbl10m.TextColor3 = Color3.fromRGB(50, 255, 100); Lbl10m.Font = Enum.Font.GothamBold; Lbl10m.TextSize = 12; Lbl10m.Text = "Per 10m: 0"
 
 local Lbl30m = Instance.new("TextLabel", TrackerHUD)
-Lbl30m.Size = UDim2.new(1, -10, 0, 20); Lbl30m.Position = UDim2.new(0, 10, 0, 105); Lbl30m.BackgroundTransparency = 1; Lbl30m.TextXAlignment = Enum.TextXAlignment.Left; Lbl30m.TextColor3 = Color3.fromRGB(255, 150, 50); Lbl30m.Font = Enum.Font.GothamBold; Lbl30m.TextSize = 12
+Lbl30m.Size = UDim2.new(1, -10, 0, 20); Lbl30m.Position = UDim2.new(0, 10, 0, 105); Lbl30m.BackgroundTransparency = 1; Lbl30m.TextXAlignment = Enum.TextXAlignment.Left; Lbl30m.TextColor3 = Color3.fromRGB(255, 150, 50); Lbl30m.Font = Enum.Font.GothamBold; Lbl30m.TextSize = 12; Lbl30m.Text = "Per 30m: 0"
 
 local LblHour = Instance.new("TextLabel", TrackerHUD)
-LblHour.Size = UDim2.new(1, -10, 0, 20); LblHour.Position = UDim2.new(0, 10, 0, 125); LblHour.BackgroundTransparency = 1; LblHour.TextXAlignment = Enum.TextXAlignment.Left; LblHour.TextColor3 = Color3.fromRGB(255, 200, 0); LblHour.Font = Enum.Font.GothamBold; LblHour.TextSize = 12
+LblHour.Size = UDim2.new(1, -10, 0, 20); LblHour.Position = UDim2.new(0, 10, 0, 125); LblHour.BackgroundTransparency = 1; LblHour.TextXAlignment = Enum.TextXAlignment.Left; LblHour.TextColor3 = Color3.fromRGB(255, 200, 0); LblHour.Font = Enum.Font.GothamBold; LblHour.TextSize = 12; LblHour.Text = "Per Hour: 0"
 
 -- Драг для HUD
 local hudDragging, hudStart, hudPos = false, nil, nil
@@ -378,7 +386,6 @@ UserInputService.InputChanged:Connect(function(i)
     end
 end)
 
--- Парсер PS99 Строк
 local suffixes = {k = 1e3, m = 1e6, b = 1e9, t = 1e12, q = 1e15, qi = 1e18}
 local function ParseStat(str)
     str = string.lower(string.gsub(tostring(str), ",", ""))
@@ -392,6 +399,7 @@ local function ParseStat(str)
 end
 
 local function FormatStat(val)
+    if val == nil or type(val) ~= "number" then return "0" end
     if val >= 1e18 then return string.format("%.2fqi", val / 1e18)
     elseif val >= 1e15 then return string.format("%.2fq", val / 1e15)
     elseif val >= 1e12 then return string.format("%.2ft", val / 1e12)
@@ -401,24 +409,41 @@ local function FormatStat(val)
     else return tostring(math.floor(val)) end
 end
 
--- Универсальная функция получения баланса (Читает и Leaderstats, и внутренности PS99)
-local function GetStatValue(statName)
+-- УМНЫЙ ЧТАТЕЛЬ БАЛАНСА (БЕЗ ЗАВИСАНИЙ)
+local function GetSafeStatValue(targetName)
     local val = 0
-    -- 1. Проверяем обычный leaderstats (Алмазы, Ранк)
+    local targetLower = string.lower(targetName)
+    
+    -- Пробуем найти в Leaderstats
     pcall(function()
         local ls = LocalPlayer:FindFirstChild("leaderstats")
-        if ls and ls:FindFirstChild(statName) then
-            val = ParseStat(ls[statName].Value)
+        if ls then
+            for _, stat in pairs(ls:GetChildren()) do
+                if string.find(string.lower(stat.Name), targetLower) then
+                    val = ParseStat(stat.Value)
+                    return
+                end
+            end
         end
     end)
-    -- 2. Проверяем внутренний модуль PS99 (Монеты, скрытые валюты)
-    if val == 0 then
-        pcall(function()
-            local Library = require(game:GetService("ReplicatedStorage").Library.Client)
-            local bal = Library.CurrencyCmds.Get(statName)
-            if type(bal) == "number" then val = bal end
-        end)
-    end
+    if val > 0 then return val end
+    
+    -- Пробуем найти через внутренности игры
+    pcall(function()
+        if PS99SaveModule then
+            local data = PS99SaveModule.Get()
+            if data and data.Inventory and data.Inventory.Currency then
+                for id, cur in pairs(data.Inventory.Currency) do
+                    local strId = tostring(cur.id or id)
+                    if string.find(string.lower(strId), targetLower) then
+                        val = cur._am or 0
+                        return
+                    end
+                end
+            end
+        end
+    end)
+    
     return val
 end
 
@@ -431,21 +456,20 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
     if state then
         StatHistory = {}
         TrackerLoop = RunService.Heartbeat:Connect(function()
-            local currentVal = GetStatValue(Config.TrackedStat)
+            local currentVal = GetSafeStatValue(Config.TrackedStat)
 
             local now = tick()
             if #StatHistory == 0 or now - StatHistory[#StatHistory].Time >= 1 then
                 table.insert(StatHistory, {Time = now, Value = currentVal})
             end
 
-            -- Храним историю только за последние 60 секунд (для точного расчета скорости)
             while #StatHistory > 0 and (now - StatHistory[1].Time) > 60 do
                 table.remove(StatHistory, 1)
             end
 
             if #StatHistory > 0 then
                 local gained = currentVal - StatHistory[1].Value
-                if gained < 0 then gained = 0; StatHistory = {} end -- Если потратил, сброс
+                if gained < 0 then gained = 0; StatHistory = {} end 
                 
                 local timePassed = math.max(1, now - StatHistory[1].Time)
                 local speedPerSec = gained / timePassed
@@ -463,14 +487,13 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
     end
 end)
 
--- КНОПКИ ВЫБОРА ВАЛЮТЫ (Специально для PS99)
-CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackedStat = "Diamonds"; StatHistory = {}; HUDTitle.Text = "💎 DIAMONDS SPEED"; KLog("Tracking Diamonds") end)
-CreateButton(PS99Page, "Track: Coins", function() Config.TrackedStat = "Coins"; StatHistory = {}; HUDTitle.Text = "🪙 COINS SPEED"; KLog("Tracking Coins") end)
-CreateButton(PS99Page, "Track: Tech Coins", function() Config.TrackedStat = "Tech Coins"; StatHistory = {}; HUDTitle.Text = "⚙️ TECH COINS SPEED"; KLog("Tracking Tech Coins") end)
-CreateButton(PS99Page, "Track: Void Coins", function() Config.TrackedStat = "Void Coins"; StatHistory = {}; HUDTitle.Text = "🌌 VOID COINS SPEED"; KLog("Tracking Void Coins") end)
+-- КНОПКИ ВЫБОРА ВАЛЮТЫ
+CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackedStat = "Diamonds"; StatHistory = {}; HUDTitle.Text = "💎 DIAMONDS SPEED" end)
+CreateButton(PS99Page, "Track: Coins", function() Config.TrackedStat = "Coins"; StatHistory = {}; HUDTitle.Text = "🪙 COINS SPEED" end)
+CreateButton(PS99Page, "Track: Void Coins", function() Config.TrackedStat = "Void"; StatHistory = {}; HUDTitle.Text = "🌌 VOID COINS SPEED" end)
 
-local TrackNameInput = CreateTextBox(PS99Page, "Custom Currency Name", "ex: Hacker Coins", function(text)
-    if text ~= "" then Config.TrackedStat = text; StatHistory = {}; HUDTitle.Text = "📈 " .. string.upper(text) .. " SPEED"; KLog("Tracking Custom: " .. text) end
+local TrackNameInput = CreateTextBox(PS99Page, "Custom Currency Name", "ex: Tech Coins", function(text)
+    if text ~= "" then Config.TrackedStat = text; StatHistory = {}; HUDTitle.Text = "📈 " .. string.upper(text) .. " SPEED" end
 end)
 
 -- ТЕЛЕПОРТЫ
@@ -593,4 +616,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V9.0 Ultimate (Pro DPS Tracker)")
+KLog("Hub Loaded! V9.1 (No Lag Tracker)")
