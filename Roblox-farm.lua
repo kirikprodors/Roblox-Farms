@@ -1,7 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v9.2 (ULTIMATE FARMING EDITION)
-    Fixed: "Bal" changed to dynamic currency names in the Speed Tracker HUD
-    Maintains: No-Lag tracking, Smart TP, Base64 Config
+    KIRIK LUXURY HUB v10.0 (FINAL SMART EDITION)
+    Added: AI Auto-Detect for Best/Secondary Currencies (Handles Gold Bars, Platinum, etc.)
+    Fixed: Dynamic Name Updating in HUD
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -16,7 +16,7 @@ local LocalPlayer = Players.LocalPlayer
 local IsAdmin = (LocalPlayer.UserId == 5463685844) -- Твой ID
 
 -- Защита от дубликатов
-local HubName = "KirikLuxuryHub_V9"
+local HubName = "KirikLuxuryHub_V10"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
     targetGui[HubName]:Destroy()
@@ -30,7 +30,8 @@ local Config = {
     FlySpeed = 50,
     UIScale = 1.0,
     SavedZones = {},
-    TrackedStat = "Diamonds" -- По умолчанию стоят Алмазы
+    TrackMode = "Diamonds", -- Режимы: AutoBest, AutoSecondary, Diamonds, Custom
+    CustomStat = ""
 }
 
 -- БИБЛИОТЕКА BASE64
@@ -136,7 +137,7 @@ CloseBtn.MouseButton1Click:Connect(function()
     task.wait(0.2); ScreenGui:Destroy()
 end)
 
--- ЛОГИКА ПЕРЕТАСКИВАНИЯ (ДВОЙНОЙ ТАП)
+-- ЛОГИКА ПЕРЕТАСКИВАНИЯ
 local dragMode = false
 local lastTap = 0
 local dragInput, dragStart, startPos = nil, nil, nil
@@ -292,7 +293,7 @@ CreateToggle(UniversalPage, "Anti-AFK", function(state)
         AntiAfkConnection = LocalPlayer.Idled:Connect(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new())
-            KLog("Anti-AFK: Kept you in game.")
+            KLog("Anti-AFK: Prevented Kick.")
         end)
     else
         if AntiAfkConnection then AntiAfkConnection:Disconnect(); AntiAfkConnection = nil end
@@ -329,19 +330,9 @@ local FlySpeedInput = CreateTextBox(UniversalPage, "Fly Speed", tostring(Config.
 end)
 
 -- ===================================
--- PET SIMULATOR 99 (HUD + TP)
+-- PET SIMULATOR 99 (SMART TRACKER)
 -- ===================================
 
--- ЗАРАНЕЕ ЗАГРУЖАЕМ ВНУТРЕННОСТИ ИГРЫ
-local PS99SaveModule = nil
-task.spawn(function()
-    pcall(function()
-        PS99SaveModule = require(game:GetService("ReplicatedStorage"):WaitForChild("Library"):WaitForChild("Client"):WaitForChild("Save"))
-        KLog("PS99 Internal Save Loaded!")
-    end)
-end)
-
--- Создаем UI Трекера
 local TrackerHUD = Instance.new("Frame", ScreenGui)
 TrackerHUD.Size = UDim2.new(0, 180, 0, 145); TrackerHUD.Position = UDim2.new(0.8, -180, 0.2, 0)
 TrackerHUD.BackgroundColor3 = Theme.ElementBg; TrackerHUD.Visible = false
@@ -350,11 +341,10 @@ Instance.new("UIStroke", TrackerHUD).Color = Theme.Accent
 
 local HUDTitle = Instance.new("TextLabel", TrackerHUD)
 HUDTitle.Size = UDim2.new(1, 0, 0, 25); HUDTitle.BackgroundTransparency = 1
-HUDTitle.Text = "📈 DIAMONDS SPEED"; HUDTitle.Font = Enum.Font.GothamBold; HUDTitle.TextColor3 = Theme.Accent; HUDTitle.TextSize = 12
+HUDTitle.Text = "📈 WAITING..."; HUDTitle.Font = Enum.Font.GothamBold; HUDTitle.TextColor3 = Theme.Accent; HUDTitle.TextSize = 12
 
--- НАДПИСИ (Динамически меняются)
 local LblCurrent = Instance.new("TextLabel", TrackerHUD)
-LblCurrent.Size = UDim2.new(1, -10, 0, 20); LblCurrent.Position = UDim2.new(0, 10, 0, 25); LblCurrent.BackgroundTransparency = 1; LblCurrent.TextXAlignment = Enum.TextXAlignment.Left; LblCurrent.TextColor3 = Theme.Text; LblCurrent.Font = Enum.Font.GothamBold; LblCurrent.TextSize = 12; LblCurrent.Text = Config.TrackedStat .. ": 0"
+LblCurrent.Size = UDim2.new(1, -10, 0, 20); LblCurrent.Position = UDim2.new(0, 10, 0, 25); LblCurrent.BackgroundTransparency = 1; LblCurrent.TextXAlignment = Enum.TextXAlignment.Left; LblCurrent.TextColor3 = Theme.Text; LblCurrent.Font = Enum.Font.GothamBold; LblCurrent.TextSize = 12; LblCurrent.Text = "Loading..."
 
 local Lbl10s = Instance.new("TextLabel", TrackerHUD)
 Lbl10s.Size = UDim2.new(1, -10, 0, 20); Lbl10s.Position = UDim2.new(0, 10, 0, 45); Lbl10s.BackgroundTransparency = 1; Lbl10s.TextXAlignment = Enum.TextXAlignment.Left; Lbl10s.TextColor3 = Color3.fromRGB(200, 200, 200); Lbl10s.Font = Enum.Font.GothamBold; Lbl10s.TextSize = 12; Lbl10s.Text = "Per 10s: 0"
@@ -409,53 +399,53 @@ local function FormatStat(val)
     else return tostring(math.floor(val)) end
 end
 
--- УМНЫЙ ЧТАТЕЛЬ БАЛАНСА
-local function GetSafeStatValue(targetName)
-    local val = 0
-    local targetLower = string.lower(targetName)
-    
-    pcall(function()
-        local ls = LocalPlayer:FindFirstChild("leaderstats")
-        if ls then
-            for _, stat in pairs(ls:GetChildren()) do
-                if string.find(string.lower(stat.Name), targetLower) then
-                    val = ParseStat(stat.Value)
-                    return
-                end
-            end
-        end
-    end)
-    if val > 0 then return val end
-    
-    pcall(function()
-        if PS99SaveModule then
-            local data = PS99SaveModule.Get()
-            if data and data.Inventory and data.Inventory.Currency then
-                for id, cur in pairs(data.Inventory.Currency) do
-                    local strId = tostring(cur.id or id)
-                    if string.find(string.lower(strId), targetLower) then
-                        val = cur._am or 0
-                        return
-                    end
-                end
-            end
-        end
-    end)
-    
-    return val
-end
-
+-- АВТО-ДЕТЕКТ ВАЛЮТ
 local TrackerLoop
 local StatHistory = {}
+local LastTrackedName = ""
 
--- ВКЛЮЧЕНИЕ HUD
 CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
     TrackerHUD.Visible = state
     if state then
         StatHistory = {}
+        LastTrackedName = ""
         TrackerLoop = RunService.Heartbeat:Connect(function()
-            local currentVal = GetSafeStatValue(Config.TrackedStat)
+            local ls = LocalPlayer:FindFirstChild("leaderstats")
+            if not ls then return end
 
+            local targetObj = nil
+
+            -- ОПРЕДЕЛЯЕМ ЦЕЛЬ
+            if Config.TrackMode == "AutoBest" then
+                local valid = {}
+                for _, v in ipairs(ls:GetChildren()) do
+                    if v.Name ~= "Rank" and v.Name ~= "Diamonds" then table.insert(valid, v) end
+                end
+                targetObj = valid[1] -- Самая топовая зональная валюта
+            elseif Config.TrackMode == "AutoSecondary" then
+                local valid = {}
+                for _, v in ipairs(ls:GetChildren()) do
+                    if v.Name ~= "Rank" and v.Name ~= "Diamonds" then table.insert(valid, v) end
+                end
+                targetObj = valid[2] or valid[1] -- Второстепенная (если есть)
+            elseif Config.TrackMode == "Diamonds" then
+                targetObj = ls:FindFirstChild("Diamonds")
+            elseif Config.TrackMode == "Custom" then
+                targetObj = ls:FindFirstChild(Config.CustomStat)
+            end
+
+            local currentName = targetObj and targetObj.Name or "Unknown"
+            local currentVal = targetObj and ParseStat(targetObj.Value) or 0
+
+            -- ЕСЛИ ВАЛЮТА ИЗМЕНИЛАСЬ (напр. С Монет на Золотые слитки) -> СБРАСЫВАЕМ ИСТОРИЮ
+            if currentName ~= LastTrackedName then
+                LastTrackedName = currentName
+                StatHistory = {}
+                HUDTitle.Text = "📈 " .. string.upper(currentName)
+                KLog("Tracker auto-switched to: " .. currentName)
+            end
+
+            -- СОБИРАЕМ ИСТОРИЮ ЗА МИНУТУ
             local now = tick()
             if #StatHistory == 0 or now - StatHistory[#StatHistory].Time >= 1 then
                 table.insert(StatHistory, {Time = now, Value = currentVal})
@@ -465,6 +455,7 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
                 table.remove(StatHistory, 1)
             end
 
+            -- СЧИТАЕМ
             if #StatHistory > 0 then
                 local gained = currentVal - StatHistory[1].Value
                 if gained < 0 then gained = 0; StatHistory = {} end 
@@ -472,7 +463,7 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
                 local timePassed = math.max(1, now - StatHistory[1].Time)
                 local speedPerSec = gained / timePassed
                 
-                LblCurrent.Text = Config.TrackedStat .. ": " .. FormatStat(currentVal)
+                LblCurrent.Text = currentName .. ": " .. FormatStat(currentVal)
                 Lbl10s.Text = "Per 10s: " .. FormatStat(speedPerSec * 10)
                 LblMin.Text = "Per Min: " .. FormatStat(speedPerSec * 60)
                 Lbl10m.Text = "Per 10m: " .. FormatStat(speedPerSec * 600)
@@ -485,13 +476,11 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
     end
 end)
 
--- КНОПКИ ВЫБОРА ВАЛЮТЫ
-CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackedStat = "Diamonds"; StatHistory = {}; HUDTitle.Text = "💎 DIAMONDS SPEED"; LblCurrent.Text = "Diamonds: 0" end)
-CreateButton(PS99Page, "Track: Coins", function() Config.TrackedStat = "Coins"; StatHistory = {}; HUDTitle.Text = "🪙 COINS SPEED"; LblCurrent.Text = "Coins: 0" end)
-CreateButton(PS99Page, "Track: Void Coins", function() Config.TrackedStat = "Void"; StatHistory = {}; HUDTitle.Text = "🌌 VOID COINS SPEED"; LblCurrent.Text = "Void Coins: 0" end)
-
-local TrackNameInput = CreateTextBox(PS99Page, "Custom Currency Name", "ex: Tech Coins", function(text)
-    if text ~= "" then Config.TrackedStat = text; StatHistory = {}; HUDTitle.Text = "📈 " .. string.upper(text) .. " SPEED"; LblCurrent.Text = text .. ": 0" end
+CreateButton(PS99Page, "Track: Best Zone Coin (AUTO)", function() Config.TrackMode = "AutoBest"; KLog("Mode: Auto Best") end)
+CreateButton(PS99Page, "Track: Secondary Coin (AUTO)", function() Config.TrackMode = "AutoSecondary"; KLog("Mode: Auto Secondary") end)
+CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackMode = "Diamonds"; KLog("Mode: Diamonds") end)
+CreateTextBox(PS99Page, "Custom Currency Name", "ex: Hacker Coins", function(text)
+    if text ~= "" then Config.TrackMode = "Custom"; Config.CustomStat = text; KLog("Mode: Custom ("..text..")") end
 end)
 
 -- ТЕЛЕПОРТЫ
@@ -614,4 +603,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V9.2 Ultimate (Dynamic Text Fixed)")
+KLog("Hub Loaded! V10.0 (Ultimate Auto Tracker)")
