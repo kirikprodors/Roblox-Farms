@@ -1,7 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v8.0 (ULTIMATE MOBILE EDITION)
-    Added: Anti-AFK, Stats/Currency Tracker HUD (DPS Meter), Time Window Selector
-    Maintains: Smart TP, Base64 Configs, Mobile-Friendly UI
+    KIRIK LUXURY HUB v8.5 (ULTIMATE MOBILE EDITION)
+    Added: Dynamic Currency Scanner (Buttons instead of Text), Time Window Buttons
+    Fixed: Clarified DPS HUD (Speed metrics instead of raw time)
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -81,25 +81,14 @@ local Theme = {
 -- СОЗДАНИЕ ГЛАВНОГО GUI
 -- ========================================= --
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = HubName
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = targetGui
+ScreenGui.Name = HubName; ScreenGui.ResetOnSpawn = false; ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling; ScreenGui.Parent = targetGui
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 500, 0, 320)
-MainFrame.AnchorPoint = Vector2.new(0.5, 0)
-MainFrame.Position = UDim2.new(0.5, 0, 0.2, 0)
-MainFrame.BackgroundColor3 = Theme.Background
-MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = true
-MainFrame.Active = true 
-MainFrame.Parent = ScreenGui
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Name = "MainFrame"; MainFrame.Size = UDim2.new(0, 500, 0, 320); MainFrame.AnchorPoint = Vector2.new(0.5, 0); MainFrame.Position = UDim2.new(0.5, 0, 0.2, 0)
+MainFrame.BackgroundColor3 = Theme.Background; MainFrame.BorderSizePixel = 0; MainFrame.ClipsDescendants = true; MainFrame.Active = true 
 
-local MainScale = Instance.new("UIScale")
+local MainScale = Instance.new("UIScale", MainFrame)
 MainScale.Scale = Config.UIScale
-MainScale.Parent = MainFrame
 
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 local MainStroke = Instance.new("UIStroke", MainFrame)
@@ -169,9 +158,7 @@ MainFrame.InputBegan:Connect(function(input)
         else
             lastTap = now
         end
-        if dragMode then
-            dragInput = input; dragStart = input.Position; startPos = MainFrame.Position
-        end
+        if dragMode then dragInput = input; dragStart = input.Position; startPos = MainFrame.Position end
     end
 end)
 MainFrame.InputEnded:Connect(function(input) if input == dragInput then dragInput = nil end end)
@@ -223,6 +210,7 @@ local function CreateButton(page, text, callback)
     Btn.MouseButton1Down:Connect(function() TweenService:Create(Btn, TweenInfo.new(0.1), {Size = UDim2.new(0.9, 0, 0, 42)}):Play() end)
     Btn.MouseButton1Up:Connect(function() TweenService:Create(Btn, TweenInfo.new(0.1), {Size = UDim2.new(0.95, 0, 0, 45)}):Play() end)
     Btn.MouseButton1Click:Connect(function() task.spawn(callback) end)
+    return Btn
 end
 
 local function CreateToggle(page, text, callback)
@@ -306,7 +294,7 @@ CreateToggle(UniversalPage, "Anti-AFK", function(state)
         AntiAfkConnection = LocalPlayer.Idled:Connect(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new())
-            KLog("Anti-AFK active: prevented kick.")
+            KLog("Anti-AFK: Kept you in game.")
         end)
         KLog("Anti-AFK Enabled")
     else
@@ -362,6 +350,7 @@ LblCurrent.Size = UDim2.new(1, -10, 0, 20); LblCurrent.Position = UDim2.new(0, 1
 local LblEarned = Instance.new("TextLabel", TrackerHUD)
 LblEarned.Size = UDim2.new(1, -10, 0, 20); LblEarned.Position = UDim2.new(0, 10, 0, 45); LblEarned.BackgroundTransparency = 1; LblEarned.TextXAlignment = Enum.TextXAlignment.Left; LblEarned.TextColor3 = Theme.Text; LblEarned.Font = Enum.Font.GothamBold; LblEarned.TextSize = 12
 
+-- ПЕРЕИМЕНОВАНЫ В SPEED, ЧТОБЫ ИЗБЕЖАТЬ ПУТАНИЦЫ СО ВРЕМЕНЕМ
 local LblPerMin = Instance.new("TextLabel", TrackerHUD)
 LblPerMin.Size = UDim2.new(1, -10, 0, 20); LblPerMin.Position = UDim2.new(0, 10, 0, 65); LblPerMin.BackgroundTransparency = 1; LblPerMin.TextXAlignment = Enum.TextXAlignment.Left; LblPerMin.TextColor3 = Color3.fromRGB(100, 255, 150); LblPerMin.Font = Enum.Font.GothamBold; LblPerMin.TextSize = 12
 
@@ -383,7 +372,7 @@ UserInputService.InputChanged:Connect(function(i)
     end
 end)
 
--- Парсер PS99 Строк (переводит 1.5m в 1500000)
+-- Парсер PS99 Строк
 local suffixes = {k = 1e3, m = 1e6, b = 1e9, t = 1e12, q = 1e15, qi = 1e18}
 local function ParseStat(str)
     str = string.lower(string.gsub(tostring(str), ",", ""))
@@ -396,7 +385,6 @@ local function ParseStat(str)
     return 0
 end
 
--- Красивый форматтер для HUD (возвращает 1500000 в 1.5m)
 local function FormatStat(val)
     if val >= 1e18 then return string.format("%.2fqi", val / 1e18)
     elseif val >= 1e15 then return string.format("%.2fq", val / 1e15)
@@ -410,43 +398,39 @@ end
 local TrackerLoop
 local StatHistory = {}
 
+-- НАСТРОЙКИ ВРЕМЕНИ (КНОПКИ ВМЕСТО ВВОДА)
 CreateToggle(TrackerPage, "Show Tracker HUD", function(state)
     TrackerHUD.Visible = state
     if state then
-        StatHistory = {} -- Сброс истории при включении
+        StatHistory = {}
         TrackerLoop = RunService.Heartbeat:Connect(function()
-            -- Ищем валюту
             local currentStatString = "0"
             if LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild(Config.TrackedStat) then
                 currentStatString = LocalPlayer.leaderstats[Config.TrackedStat].Value
             end
             local currentVal = ParseStat(currentStatString)
 
-            -- Пишем историю раз в секунду
             local now = tick()
             if #StatHistory == 0 or now - StatHistory[#StatHistory].Time >= 1 then
                 table.insert(StatHistory, {Time = now, Value = currentVal})
             end
 
-            -- Удаляем старые записи за пределами времени
             while #StatHistory > 0 and (now - StatHistory[1].Time) > Config.TrackTime do
                 table.remove(StatHistory, 1)
             end
 
-            -- Математика
             if #StatHistory > 0 then
                 local gained = currentVal - StatHistory[1].Value
-                if gained < 0 then gained = 0; StatHistory = {} end -- Если потратил, сброс
+                if gained < 0 then gained = 0; StatHistory = {} end 
                 
-                local timePassed = now - StatHistory[1].Time
-                if timePassed < 1 then timePassed = 1 end
-
+                local timePassed = math.max(1, now - StatHistory[1].Time)
                 local perSecond = gained / timePassed
                 
                 LblCurrent.Text = Config.TrackedStat..": " .. FormatStat(currentVal)
+                -- Показывает РЕАЛЬНОЕ время, которое прошло с начала отсчета (до предела TrackTime)
                 LblEarned.Text = "Earned (".. math.floor(timePassed) .."s): " .. FormatStat(gained)
-                LblPerMin.Text = "Per Min: " .. FormatStat(perSecond * 60)
-                LblPerHour.Text = "Per Hour: " .. FormatStat(perSecond * 3600)
+                LblPerMin.Text = "Speed: " .. FormatStat(perSecond * 60) .. " / Min"
+                LblPerHour.Text = "Speed: " .. FormatStat(perSecond * 3600) .. " / Hour"
             end
         end)
     else
@@ -454,12 +438,34 @@ CreateToggle(TrackerPage, "Show Tracker HUD", function(state)
     end
 end)
 
-local TrackNameInput = CreateTextBox(TrackerPage, "Stat to Track (ex: Diamonds)", Config.TrackedStat, function(text)
-    if text ~= "" then Config.TrackedStat = text; StatHistory = {} end
-end)
-local TrackTimeInput = CreateTextBox(TrackerPage, "Time Window in Seconds (ex: 60)", tostring(Config.TrackTime), function(text)
-    local num = tonumber(text:match("%d+"))
-    if num and num >= 5 then Config.TrackTime = num; StatHistory = {} end
+CreateButton(TrackerPage, "Set Time: 10 Seconds", function() Config.TrackTime = 10; StatHistory = {}; KLog("Time set to 10s") end)
+CreateButton(TrackerPage, "Set Time: 60 Seconds", function() Config.TrackTime = 60; StatHistory = {}; KLog("Time set to 60s") end)
+CreateButton(TrackerPage, "Set Time: 5 Minutes", function() Config.TrackTime = 300; StatHistory = {}; KLog("Time set to 5m") end)
+
+-- ДИНАМИЧЕСКИЕ КНОПКИ ВАЛЮТЫ (СКАНИРОВАНИЕ)
+local DynamicButtons = {}
+
+CreateButton(TrackerPage, "🔄 Scan Currencies (Click Here)", function()
+    -- Удаляем старые кнопки, если они были
+    for _, btn in pairs(DynamicButtons) do btn:Destroy() end
+    table.clear(DynamicButtons)
+
+    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    if ls then
+        for _, stat in pairs(ls:GetChildren()) do
+            local newBtn = CreateButton(TrackerPage, "Track: " .. stat.Name, function()
+                Config.TrackedStat = stat.Name
+                StatHistory = {}
+                KLog("Now tracking: " .. stat.Name)
+            end)
+            -- Красим кнопку в другой цвет, чтобы выделялась
+            newBtn.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
+            table.insert(DynamicButtons, newBtn)
+        end
+        KLog("Currencies scanned successfully!")
+    else
+        KLog("Error: No leaderstats found. Are you in a game?")
+    end
 end)
 
 -- ===================================
@@ -548,8 +554,6 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
             Config = data
             ZoneInputBox.Text = tostring(Config.TargetPS99Zone or 1)
             FlySpeedInput.Text = tostring(Config.FlySpeed or 50)
-            TrackNameInput.Text = tostring(Config.TrackedStat or "Diamonds")
-            TrackTimeInput.Text = tostring(Config.TrackTime or 60)
             local scale = Config.UIScale or 1.0; SizeInputBox.Text = tostring(scale)
             TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = scale}):Play()
             KLog("Config Loaded!")
@@ -557,4 +561,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V8 Ultimate (Anti-AFK & Tracker)")
+KLog("Hub Loaded! V8.5 Ultimate (Dynamic Tracker)")
