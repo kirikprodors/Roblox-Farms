@@ -1,8 +1,8 @@
 --[[ 
-    KIRIK LUXURY HUB v13.0 (ULTIMATE FARMING EDITION)
-    Fixed: Auto Farm damage drop (Packet spam rate-limit resolved)
-    Added: Smart Focus Auto Farm (Targets only the largest breakable in radius)
-    Maintains: AI DPS Tracker, Smart TP, Base64 Configs, Anti-AFK
+    KIRIK LUXURY HUB v14.0 (ULTIMATE FARMING EDITION)
+    Fixed: Auto Farm Pet Confusion (Target switching bug fixed)
+    Added: Target Lock System (Focuses one item until destroyed)
+    Added: Visual Target Highlight (Red Glow on current farm target)
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -17,7 +17,7 @@ local LocalPlayer = Players.LocalPlayer
 local IsAdmin = (LocalPlayer.UserId == 5463685844) -- Твой ID
 
 -- Защита от дубликатов
-local HubName = "KirikLuxuryHub_V13"
+local HubName = "KirikLuxuryHub_V14"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
     targetGui[HubName]:Destroy()
@@ -33,7 +33,7 @@ local Config = {
     SavedZones = {},
     TrackMode = "Auto",
     CustomStat = "Diamonds",
-    AutoFarmRadius = 10
+    AutoFarmRadius = 15 -- Немного увеличил радиус по умолчанию
 }
 
 -- БИБЛИОТЕКА BASE64
@@ -338,14 +338,42 @@ end)
 -- PET SIMULATOR 99 (AUTO FARM FOCUS)
 -- ===================================
 local AutoFarmActive = false
+local CurrentFarmTarget = nil
 
-RadiusInputBox = CreateTextBox(PS99Page, "Auto Farm Radius (Default: 10)", tostring(Config.AutoFarmRadius), function(text)
+-- Создаем визуал захвата цели
+local FarmHighlight = Instance.new("Highlight")
+FarmHighlight.Name = "KirikFarmHighlight"
+FarmHighlight.FillColor = Color3.fromRGB(255, 50, 50) -- Красный цвет
+FarmHighlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+FarmHighlight.FillTransparency = 0.5
+FarmHighlight.OutlineTransparency = 0
+
+RadiusInputBox = CreateTextBox(PS99Page, "Auto Farm Radius (Default: 15)", tostring(Config.AutoFarmRadius), function(text)
     local num = tonumber(text:match("%d+"))
     if num then Config.AutoFarmRadius = num; KLog("Radius set to: " .. num) end
 end)
 
--- Умная функция поиска САМОГО БОЛЬШОГО предмета в радиусе
-local function getBestBreakableInRadius(radius)
+-- Проверка, жива ли еще наша цель и в радиусе ли она
+local function IsTargetValid(target, radius)
+    if not target or not target.Parent then return false end
+    if target.Parent.Name ~= "Breakables" then return false end -- Игра удаляет сломанные сундуки из папки
+    
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    
+    local dist = (target:GetPivot().Position - hrp.Position).Magnitude
+    if dist > radius then return false end
+    
+    -- Проверка ХП (Иногда коробка пустая, но еще не удалена)
+    local hp = tonumber(target:GetAttribute("Health") or target:GetAttribute("MaxHealth") or 1)
+    if hp <= 0 then return false end
+    
+    return true
+end
+
+-- Поиск новой самой жирной цели
+local function GetBestBreakableInRadius(radius)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
@@ -361,21 +389,21 @@ local function getBestBreakableInRadius(radius)
         local dist = (pivot.Position - hrp.Position).Magnitude
         
         if dist <= radius then
-            -- Оценка: Размер + Здоровье
-            local volume = 0
-            if b:IsA("Model") then
-                local size = b:GetExtentsSize()
-                volume = size.X * size.Y * size.Z
-            elseif b:IsA("BasePart") then
-                volume = b.Size.X * b.Size.Y * b.Size.Z
-            end
-            
-            local hp = b:GetAttribute("Health") or b:GetAttribute("MaxHealth") or 0
-            local score = volume + tonumber(hp)
-
-            if score > maxScore then
-                maxScore = score
-                bestTarget = b
+            local hp = tonumber(b:GetAttribute("Health") or b:GetAttribute("MaxHealth") or 0)
+            if hp > 0 then
+                local volume = 0
+                if b:IsA("Model") then
+                    local size = b:GetExtentsSize()
+                    volume = size.X * size.Y * size.Z
+                elseif b:IsA("BasePart") then
+                    volume = b.Size.X * b.Size.Y * b.Size.Z
+                end
+                
+                local score = volume + hp -- Учитываем размер и хп
+                if score > maxScore then
+                    maxScore = score
+                    bestTarget = b
+                end
             end
         end
     end
@@ -383,7 +411,7 @@ local function getBestBreakableInRadius(radius)
     return bestTarget
 end
 
-CreateToggle(PS99Page, "Auto Tap Farm (Focus Target)", function(state)
+CreateToggle(PS99Page, "Auto Tap Farm (Target Lock)", function(state)
     AutoFarmActive = state
     if AutoFarmActive then
         KLog("Auto Farm Focus Started! Range: " .. Config.AutoFarmRadius)
@@ -392,29 +420,45 @@ CreateToggle(PS99Page, "Auto Tap Farm (Focus Target)", function(state)
             local tapRemote = network and network:FindFirstChild("Breakables_PlayerDealDamage")
             
             if not tapRemote then
-                KLog("Error: Tap Remote not found! Game might have updated.")
+                KLog("Error: Tap Remote not found!")
                 return
             end
 
             while AutoFarmActive do
-                -- Находим самую жирную цель в радиусе
-                local target = getBestBreakableInRadius(Config.AutoFarmRadius)
+                -- Если старая цель умерла или мы ушли далеко -> Ищем новую
+                if not IsTargetValid(CurrentFarmTarget, Config.AutoFarmRadius) then
+                    CurrentFarmTarget = GetBestBreakableInRadius(Config.AutoFarmRadius)
+                    
+                    if CurrentFarmTarget then
+                        FarmHighlight.Parent = CurrentFarmTarget
+                        KLog("Target Locked: " .. CurrentFarmTarget.Name)
+                    else
+                        FarmHighlight.Parent = nil
+                    end
+                end
                 
-                if target then
+                -- Если цель есть -> Спамим урон только по ней
+                if CurrentFarmTarget then
                     pcall(function()
-                        -- Бьем только по этой цели!
-                        tapRemote:FireServer(target.Name)
+                        tapRemote:FireServer(CurrentFarmTarget.Name)
                     end)
                 end
                 
                 -- Идеальная задержка: 10 ударов в секунду (Не вызывает подозрений у сервера)
                 task.wait(0.1) 
             end
+            
+            -- Выключаем подсветку при отключении фарма
+            FarmHighlight.Parent = nil
+            CurrentFarmTarget = nil
         end)
     else
         KLog("Auto Farm Stopped.")
+        FarmHighlight.Parent = nil
+        CurrentFarmTarget = nil
     end
 end)
+
 
 -- ===================================
 -- PET SIMULATOR 99 (AI DPS TRACKER)
@@ -686,7 +730,7 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
             Config = data
             ZoneInputBox.Text = tostring(Config.TargetPS99Zone or 1)
             FlySpeedInput.Text = tostring(Config.FlySpeed or 50)
-            RadiusInputBox.Text = tostring(Config.AutoFarmRadius or 10)
+            RadiusInputBox.Text = tostring(Config.AutoFarmRadius or 15)
             local scale = Config.UIScale or 1.0; SizeInputBox.Text = tostring(scale)
             TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = scale}):Play()
             KLog("Config Loaded!")
@@ -694,4 +738,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V13.0 (Smart Auto-Farm Active)")
+KLog("Hub Loaded! V14.0 (Target Lock Active)")
