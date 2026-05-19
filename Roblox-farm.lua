@@ -1,6 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v12.0 (ULTIMATE FARMING EDITION)
-    Added: Auto Tap Farm (Network-based, safe speed, adjustable radius)
+    KIRIK LUXURY HUB v13.0 (ULTIMATE FARMING EDITION)
+    Fixed: Auto Farm damage drop (Packet spam rate-limit resolved)
+    Added: Smart Focus Auto Farm (Targets only the largest breakable in radius)
     Maintains: AI DPS Tracker, Smart TP, Base64 Configs, Anti-AFK
 ]]
 
@@ -16,7 +17,7 @@ local LocalPlayer = Players.LocalPlayer
 local IsAdmin = (LocalPlayer.UserId == 5463685844) -- Твой ID
 
 -- Защита от дубликатов
-local HubName = "KirikLuxuryHub_V12"
+local HubName = "KirikLuxuryHub_V13"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
     targetGui[HubName]:Destroy()
@@ -32,7 +33,7 @@ local Config = {
     SavedZones = {},
     TrackMode = "Auto",
     CustomStat = "Diamonds",
-    AutoFarmRadius = 10 -- Радиус автофарма
+    AutoFarmRadius = 10
 }
 
 -- БИБЛИОТЕКА BASE64
@@ -274,7 +275,7 @@ local function KLog(msg)
         DebugPage.CanvasPosition = Vector2.new(0, 999999)
     end
 end
-if IsAdmin then KLog("Welcome to Admin Mode, Creator!") end
+if IsAdmin then KLog("Welcome to Admin Mode!") end
 
 --=========================================--
 --           СТРАНИЦЫ И ФУНКЦИОНАЛ         --
@@ -284,7 +285,7 @@ local PS99Page = CreateTab("PS99", false)
 local MM2Page = CreateTab("MM2", false)
 local SettingsPage = CreateTab("Settings", false)
 
--- ГЛОБАЛЬНЫЕ UI ЭЛЕМЕНТЫ ДЛЯ ОБНОВЛЕНИЯ ИЗ КОНФИГА
+-- ГЛОБАЛЬНЫЕ UI ЭЛЕМЕНТЫ (ДЛЯ ОБНОВЛЕНИЯ КОНФИГА)
 local ZoneInputBox, FlySpeedInput, RadiusInputBox, SizeInputBox
 
 -- ===================================
@@ -334,49 +335,79 @@ FlySpeedInput = CreateTextBox(UniversalPage, "Fly Speed", tostring(Config.FlySpe
 end)
 
 -- ===================================
--- PET SIMULATOR 99 (AUTO FARM)
+-- PET SIMULATOR 99 (AUTO FARM FOCUS)
 -- ===================================
 local AutoFarmActive = false
 
 RadiusInputBox = CreateTextBox(PS99Page, "Auto Farm Radius (Default: 10)", tostring(Config.AutoFarmRadius), function(text)
     local num = tonumber(text:match("%d+"))
-    if num then 
-        Config.AutoFarmRadius = num 
-        KLog("Auto Farm Radius set to: " .. num)
-    end
+    if num then Config.AutoFarmRadius = num; KLog("Radius set to: " .. num) end
 end)
 
-CreateToggle(PS99Page, "Auto Tap Farm", function(state)
+-- Умная функция поиска САМОГО БОЛЬШОГО предмета в радиусе
+local function getBestBreakableInRadius(radius)
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local breakables = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Breakables")
+    if not breakables then return nil end
+
+    local bestTarget = nil
+    local maxScore = -1
+
+    for _, b in pairs(breakables:GetChildren()) do
+        local pivot = b:GetPivot()
+        local dist = (pivot.Position - hrp.Position).Magnitude
+        
+        if dist <= radius then
+            -- Оценка: Размер + Здоровье
+            local volume = 0
+            if b:IsA("Model") then
+                local size = b:GetExtentsSize()
+                volume = size.X * size.Y * size.Z
+            elseif b:IsA("BasePart") then
+                volume = b.Size.X * b.Size.Y * b.Size.Z
+            end
+            
+            local hp = b:GetAttribute("Health") or b:GetAttribute("MaxHealth") or 0
+            local score = volume + tonumber(hp)
+
+            if score > maxScore then
+                maxScore = score
+                bestTarget = b
+            end
+        end
+    end
+    
+    return bestTarget
+end
+
+CreateToggle(PS99Page, "Auto Tap Farm (Focus Target)", function(state)
     AutoFarmActive = state
     if AutoFarmActive then
-        KLog("Auto Farm Started! Range: " .. Config.AutoFarmRadius)
+        KLog("Auto Farm Focus Started! Range: " .. Config.AutoFarmRadius)
         task.spawn(function()
             local network = game:GetService("ReplicatedStorage"):FindFirstChild("Network")
             local tapRemote = network and network:FindFirstChild("Breakables_PlayerDealDamage")
             
             if not tapRemote then
-                KLog("Error: Tap Remote not found!")
+                KLog("Error: Tap Remote not found! Game might have updated.")
                 return
             end
 
             while AutoFarmActive do
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local breakables = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Breakables")
-                    if breakables then
-                        for _, b in pairs(breakables:GetChildren()) do
-                            local pivot = b:GetPivot()
-                            local dist = (pivot.Position - hrp.Position).Magnitude
-                            if dist <= Config.AutoFarmRadius then
-                                pcall(function()
-                                    tapRemote:FireServer(b.Name)
-                                end)
-                            end
-                        end
-                    end
+                -- Находим самую жирную цель в радиусе
+                local target = getBestBreakableInRadius(Config.AutoFarmRadius)
+                
+                if target then
+                    pcall(function()
+                        -- Бьем только по этой цели!
+                        tapRemote:FireServer(target.Name)
+                    end)
                 end
-                -- Ограничиваем скорость: 10 тапов в секунду (Защита от кика анти-читом)
+                
+                -- Идеальная задержка: 10 ударов в секунду (Не вызывает подозрений у сервера)
                 task.wait(0.1) 
             end
         end)
@@ -385,11 +416,9 @@ CreateToggle(PS99Page, "Auto Tap Farm", function(state)
     end
 end)
 
-
 -- ===================================
--- PET SIMULATOR 99 (AI TRACKER)
+-- PET SIMULATOR 99 (AI DPS TRACKER)
 -- ===================================
-
 local PS99SaveModule = nil
 task.spawn(function()
     pcall(function()
@@ -665,4 +694,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V12.0 (Auto Farm Added)")
+KLog("Hub Loaded! V13.0 (Smart Auto-Farm Active)")
