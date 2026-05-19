@@ -1,8 +1,7 @@
 --[[ 
-    KIRIK LUXURY HUB v11.0 (ULTIMATE FARMING EDITION)
-    Fixed: DPS Calculator Math (No more fake dropping numbers)
-    Added: Pure AI Auto-Detect (Instantly detects what you are currently looting)
-    Removed: Flaky Leaderstats scanning (Now directly reads PS99 Memory)
+    KIRIK LUXURY HUB v12.0 (ULTIMATE FARMING EDITION)
+    Added: Auto Tap Farm (Network-based, safe speed, adjustable radius)
+    Maintains: AI DPS Tracker, Smart TP, Base64 Configs, Anti-AFK
 ]]
 
 local CoreGui = game:GetService("CoreGui")
@@ -17,7 +16,7 @@ local LocalPlayer = Players.LocalPlayer
 local IsAdmin = (LocalPlayer.UserId == 5463685844) -- Твой ID
 
 -- Защита от дубликатов
-local HubName = "KirikLuxuryHub_V11"
+local HubName = "KirikLuxuryHub_V12"
 local targetGui = (gethui and gethui()) or CoreGui
 if targetGui:FindFirstChild(HubName) then
     targetGui[HubName]:Destroy()
@@ -31,8 +30,9 @@ local Config = {
     FlySpeed = 50,
     UIScale = 1.0,
     SavedZones = {},
-    TrackMode = "Auto", -- "Auto" или "Custom"
-    CustomStat = "Diamonds"
+    TrackMode = "Auto",
+    CustomStat = "Diamonds",
+    AutoFarmRadius = 10 -- Радиус автофарма
 }
 
 -- БИБЛИОТЕКА BASE64
@@ -284,6 +284,9 @@ local PS99Page = CreateTab("PS99", false)
 local MM2Page = CreateTab("MM2", false)
 local SettingsPage = CreateTab("Settings", false)
 
+-- ГЛОБАЛЬНЫЕ UI ЭЛЕМЕНТЫ ДЛЯ ОБНОВЛЕНИЯ ИЗ КОНФИГА
+local ZoneInputBox, FlySpeedInput, RadiusInputBox, SizeInputBox
+
 -- ===================================
 -- UNIVERSAL FUNCTIONS (ANTI-AFK)
 -- ===================================
@@ -325,21 +328,72 @@ end
 CreateToggle(UniversalPage, "Mobile Fly", ToggleFly)
 CreateToggle(UniversalPage, "Noclip", ToggleNoclip)
 CreateToggle(UniversalPage, "Player ESP", ToggleESP)
-local FlySpeedInput = CreateTextBox(UniversalPage, "Fly Speed", tostring(Config.FlySpeed), function(text)
+FlySpeedInput = CreateTextBox(UniversalPage, "Fly Speed", tostring(Config.FlySpeed), function(text)
     local num = tonumber(text:match("%d+"))
     if num then Config.FlySpeed = num end
 end)
 
 -- ===================================
+-- PET SIMULATOR 99 (AUTO FARM)
+-- ===================================
+local AutoFarmActive = false
+
+RadiusInputBox = CreateTextBox(PS99Page, "Auto Farm Radius (Default: 10)", tostring(Config.AutoFarmRadius), function(text)
+    local num = tonumber(text:match("%d+"))
+    if num then 
+        Config.AutoFarmRadius = num 
+        KLog("Auto Farm Radius set to: " .. num)
+    end
+end)
+
+CreateToggle(PS99Page, "Auto Tap Farm", function(state)
+    AutoFarmActive = state
+    if AutoFarmActive then
+        KLog("Auto Farm Started! Range: " .. Config.AutoFarmRadius)
+        task.spawn(function()
+            local network = game:GetService("ReplicatedStorage"):FindFirstChild("Network")
+            local tapRemote = network and network:FindFirstChild("Breakables_PlayerDealDamage")
+            
+            if not tapRemote then
+                KLog("Error: Tap Remote not found!")
+                return
+            end
+
+            while AutoFarmActive do
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local breakables = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Breakables")
+                    if breakables then
+                        for _, b in pairs(breakables:GetChildren()) do
+                            local pivot = b:GetPivot()
+                            local dist = (pivot.Position - hrp.Position).Magnitude
+                            if dist <= Config.AutoFarmRadius then
+                                pcall(function()
+                                    tapRemote:FireServer(b.Name)
+                                end)
+                            end
+                        end
+                    end
+                end
+                -- Ограничиваем скорость: 10 тапов в секунду (Защита от кика анти-читом)
+                task.wait(0.1) 
+            end
+        end)
+    else
+        KLog("Auto Farm Stopped.")
+    end
+end)
+
+
+-- ===================================
 -- PET SIMULATOR 99 (AI TRACKER)
 -- ===================================
 
--- ЗАРАНЕЕ ЗАГРУЖАЕМ ВНУТРЕННОСТИ ИГРЫ
 local PS99SaveModule = nil
 task.spawn(function()
     pcall(function()
         PS99SaveModule = require(game:GetService("ReplicatedStorage"):WaitForChild("Library"):WaitForChild("Client"):WaitForChild("Save"))
-        KLog("PS99 Internal Save Loaded!")
     end)
 end)
 
@@ -398,7 +452,6 @@ local function FormatStat(val)
     else return tostring(math.floor(val)) end
 end
 
--- ИСХОДНАЯ ЛОГИКА ТРЕКЕРА
 local TrackerThread
 local StatHistory = {}
 local AutoDetectedID = "Diamonds"
@@ -411,7 +464,7 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
         LastInventorySnap = {}
         
         TrackerThread = task.spawn(function()
-            while task.wait(1) do -- ОБНОВЛЕНИЕ РАЗ В СЕКУНДУ (ЧТОБЫ НЕ ЛАГАЛО)
+            while task.wait(1) do
                 if not PS99SaveModule then continue end
                 
                 local save = PS99SaveModule.Get()
@@ -420,7 +473,6 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
                 local currentInv = save.Inventory.Currency
                 local activeID = Config.TrackMode == "Custom" and Config.CustomStat or AutoDetectedID
                 
-                -- AI AUTO-DETECT (Ищет валюту, которая только что увеличилась)
                 if Config.TrackMode == "Auto" then
                     for id, curData in pairs(currentInv) do
                         local name = tostring(curData.id or id)
@@ -436,12 +488,10 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
                     end
                 end
                 
-                -- Сохраняем слепок инвентаря для сравнения
                 for id, curData in pairs(currentInv) do
                     LastInventorySnap[tostring(curData.id or id)] = curData._am or 0
                 end
                 
-                -- ПОЛУЧАЕМ КОЛИЧЕСТВО АКТИВНОЙ ВАЛЮТЫ
                 local currentVal = 0
                 for id, curData in pairs(currentInv) do
                     if string.lower(tostring(curData.id or id)) == string.lower(activeID) then
@@ -450,21 +500,15 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
                     end
                 end
                 
-                -- ОБНОВЛЯЕМ НАЗВАНИЕ В HUD
                 HUDTitle.Text = "📈 " .. string.upper(activeID) .. " SPEED"
                 
-                -- ЗАПИСЬ ИСТОРИИ И МАТЕМАТИКА DPS
                 local now = tick()
-                
-                -- Если сменили валюту - сбрасываем историю
                 if activeID ~= AutoDetectedID and Config.TrackMode == "Custom" then
                     StatHistory = {}
                     AutoDetectedID = activeID
                 end
 
                 table.insert(StatHistory, {Time = now, Value = currentVal})
-                
-                -- Храним только последнюю минуту
                 while #StatHistory > 0 and (now - StatHistory[1].Time) > 60 do table.remove(StatHistory, 1) end
                 
                 if #StatHistory > 1 then
@@ -494,15 +538,14 @@ CreateToggle(PS99Page, "Show DPS / Speed HUD", function(state)
     end
 end)
 
--- КНОПКИ ВЫБОРА ВАЛЮТЫ (AI РЕЖИМ)
-CreateButton(PS99Page, "Track: SMART AUTO-DETECT", function() Config.TrackMode = "Auto"; KLog("Mode: AI Auto-Detect (Hit any coin to lock!)") end)
+CreateButton(PS99Page, "Track: SMART AUTO-DETECT", function() Config.TrackMode = "Auto"; KLog("Mode: AI Auto-Detect (Hit any coin!)") end)
 CreateButton(PS99Page, "Track: Diamonds", function() Config.TrackMode = "Custom"; Config.CustomStat = "Diamonds"; KLog("Mode: Fixed Diamonds") end)
 CreateTextBox(PS99Page, "Custom Currency Name", "ex: Void Coins", function(text)
     if text ~= "" then Config.TrackMode = "Custom"; Config.CustomStat = text; KLog("Mode: Custom ("..text..")") end
 end)
 
 -- ТЕЛЕПОРТЫ
-local ZoneInputBox = CreateTextBox(PS99Page, "Target Zone (ex: 33)", tostring(Config.TargetPS99Zone), function(text)
+ZoneInputBox = CreateTextBox(PS99Page, "Target Zone (ex: 33)", tostring(Config.TargetPS99Zone), function(text)
     local num = tonumber(text:match("%d+"))
     if num then Config.TargetPS99Zone = num end
 end)
@@ -593,7 +636,7 @@ end)
 -- ===================================
 -- CONFIG BASE64 IMPORT/EXPORT
 -- ===================================
-local SizeInputBox = CreateTextBox(SettingsPage, "Custom Hub Size (ex. 75, 1.2)", tostring(Config.UIScale), function(text)
+SizeInputBox = CreateTextBox(SettingsPage, "Custom Hub Size (ex. 75, 1.2)", tostring(Config.UIScale), function(text)
     local scale = tonumber(text:match("[%d%.]+"))
     if scale then
         if scale >= 10 then scale = scale / 100 end
@@ -613,6 +656,8 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
         if type(data) == "table" then
             Config = data
             ZoneInputBox.Text = tostring(Config.TargetPS99Zone or 1)
+            FlySpeedInput.Text = tostring(Config.FlySpeed or 50)
+            RadiusInputBox.Text = tostring(Config.AutoFarmRadius or 10)
             local scale = Config.UIScale or 1.0; SizeInputBox.Text = tostring(scale)
             TweenService:Create(MainScale, TweenInfo.new(0.2), {Scale = scale}):Play()
             KLog("Config Loaded!")
@@ -620,4 +665,4 @@ CreateButton(SettingsPage, "IMPORT CONFIG (Load All)", function()
     end)
 end)
 
-KLog("Hub Loaded! V11.0 Ultimate (AI Tracker)")
+KLog("Hub Loaded! V12.0 (Auto Farm Added)")
